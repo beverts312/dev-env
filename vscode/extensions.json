@@ -1,0 +1,26 @@
+{
+    "recommendations": [
+        "GuardRex.status-bar-tasks",
+
+        "formulahendry.code-runner",
+        "msjsdiag.debugger-for-chrome",
+
+        "PeterJausovec.vscode-docker",
+
+        "joelday.docthis",        
+        "christian-kohler.path-intellisense",
+        "dbaeumer.vscode-eslint",
+        "dbaeumer.jshint",
+        "eg2.tslint",
+        
+        "waderyan.gitblame",
+        "donjayamanne.githistory",
+
+        "ms-vscode.csharp",
+        "lukehoban.go",
+        "redhat.java",
+        "ms-vscode.powershell",
+        "donjayamanne.python",
+        "itryapitsin.scala"
+    ]
+}

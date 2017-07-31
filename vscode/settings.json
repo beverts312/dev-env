@@ -1,0 +1,13 @@
+{
+    "editor.fontLigatures": true,
+    "editor.fontFamily": "Monoid",
+    
+    "git.confirmSync": false,
+    "git.enableSmartCommit": true,
+    
+    "vsicons.projectDetection.disableDetect": true,
+    
+    "workbench.iconTheme": "vscode-icons",
+    
+    "window.zoomLevel": 0
+}
