@@ -18,7 +18,11 @@ alias gpr='git pull upstream develop --rebase'
 alias gpu='git pull upstream develop'
 alias gco='git checkout -b ${1}'
 alias guc='git reset --soft HEAD^'
-alias gitneww="$WORK_SCRIPTS/n.sh"
+alias ga='git add'
+alias gc='git commit -m'
+alias gd='git diff'
+alias gl='git log'
+alias gs='git status'
 
 # build
 alias mbld='mvn clean install -DskipTests=true'
@@ -30,9 +34,19 @@ alias gsf='grunt serveFast'
 alias nrb='npm run build'
 
 
-# directories
-alias wdev="cd $WORK_DEV && wnode"
-alias pdev="cd $MY_DEV"
+# navigation
+alias wdev="cd $WORK_DEV && wnode"                                              # Go to work dev dir (set in master profile)
+alias pdev="cd $MY_DEV"                                                         # Go to personal dev dir (set in master profile)
+alias cd..='cd ../'                                                             # Go back 1 directory level (for fast typers)
+alias ..='cd ../'                                                               # Go back 1 directory level
+alias ...='cd ../../'                                                           # Go back 2 directory levels
+alias .3='cd ../../../'                                                         # Go back 3 directory levels
+alias .4='cd ../../../../'                                                      # Go back 4 directory levels
+alias .5='cd ../../../../../'                                                   # Go back 5 directory levels
+alias .6='cd ../../../../../../'                                                # Go back 6 directory levels
+alias ~='cd ~'                                                                  # Go Home
 
-# fun
-alias nyan='docker run -it --rm supertest2014/nyan'
+# other
+alias c='clear'                                                                 # Clear terminal display
+alias ij='open -a /Applications/IntelliJ\ IDEA.app/Contents/MacOS/idea .'       # Open InteliJ       
+alias nyan='docker run -it --rm supertest2014/nyan'                             # Show nyancat
