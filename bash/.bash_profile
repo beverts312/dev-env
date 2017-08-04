@@ -10,8 +10,10 @@ alias dkill='docker kill $(docker ps -aqf status=running)'
 alias drm='docker rm -f $(docker ps -aqf status=exited)'
 alias drmf='dkill && drm'
 alias drmi='docker rmi -f $(docker images -q)'
-alias dssh='docker exec -it ${1} sh'
 alias dps='docker ps --format "{{.ID}}; {{.Image}}; {{.Ports}}"'
+dsh() {
+  docker exec -it ${1} sh
+}
 
 # git
 alias gpr='git pull upstream develop --rebase'
@@ -47,6 +49,9 @@ alias .6='cd ../../../../../../'                                                
 alias ~='cd ~'                                                                  # Go Home
 
 # other
+alias ls='ls -G'                                                                # Colorize ls
+alias ll='ls -la'                                                               # Long ls
+alias ports='netstat -tulanp'                                                   # Show Ports
 alias c='clear'                                                                 # Clear terminal display
 alias ij='open -a /Applications/IntelliJ\ IDEA.app/Contents/MacOS/idea .'       # Open InteliJ       
 alias nyan='docker run -it --rm supertest2014/nyan'                             # Show nyancat
