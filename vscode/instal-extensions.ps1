@@ -1,0 +1,17 @@
+code --install-extension GuardRex.status-bar-tasks
+code --install-extension formulahendry.code-runner
+code --install-extension msjsdiag.debugger-for-chrome
+code --install-extension PeterJausovec.vscode-docker
+code --install-extension joelday.docthis        
+code --install-extension christian-kohler.path-intellisense
+code --install-extension dbaeumer.vscode-eslint
+code --install-extension dbaeumer.jshint
+code --install-extension eg2.tslint
+code --install-extension waderyan.gitblame
+code --install-extension donjayamanne.githistor
+code --install-extension ms-vscode.csharp
+code --install-extension lukehoban.go
+code --install-extension redhat.java
+code --install-extension ms-vscode.powershell
+code --install-extension donjayamanne.python
+code --install-extension itryapitsin.scala
