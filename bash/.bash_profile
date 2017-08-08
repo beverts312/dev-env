@@ -11,6 +11,7 @@ alias drm='docker rm -f $(docker ps -aqf status=exited)'
 alias drmf='dkill && drm'
 alias drmi='docker rmi -f $(docker images -q)'
 alias dps='docker ps --format "{{.ID}}; {{.Image}}; {{.Ports}}"'
+alias dcu='docker-compose up -d'
 dsh() {
   docker exec -it ${1} sh
 }
@@ -29,7 +30,7 @@ alias gs='git status'
 # build
 alias mbld='mvn clean install -DskipTests=true'
 mavenTest() {
-        mvn test -Dtest="${1}"
+        mvn clean test -Dtest="${1}"
 }
 alias mtest='mavenTest'
 alias gsf='grunt serveFast'
