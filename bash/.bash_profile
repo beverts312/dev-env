@@ -11,7 +11,10 @@ alias drm='docker rm -f $(docker ps -aqf status=exited)'
 alias drmf='dkill && drm'
 alias drmi='docker rmi -f $(docker images -q)'
 alias dps='docker ps --format "{{.ID}}; {{.Image}}; {{.Ports}}"'
+alias de='docker exec -it '
+alias dl='docker logs '
 alias dcu='docker-compose up -d'
+alias dcl='docker-compose logs -f ${1}'
 dsh() {
   docker exec -it ${1} sh
 }
