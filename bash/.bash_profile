@@ -13,8 +13,11 @@ alias drmi='docker rmi -f $(docker images -q)'
 alias dps='docker ps --format "{{.ID}}; {{.Image}}; {{.Ports}}"'
 alias de='docker exec -it '
 alias dl='docker logs '
+alias dstat='docker stats '
 alias dcu='docker-compose up -d'
 alias dcl='docker-compose logs -f ${1}'
+alias dcc='docker-compose'
+alias d='docker'
 dsh() {
   docker exec -it ${1} sh
 }
@@ -38,7 +41,8 @@ mavenTest() {
 alias mtest='mavenTest'
 alias gsf='grunt serveFast'
 alias nrb='npm run build'
-
+alias nrs='npm run start'
+alias ni='npm install'
 
 # navigation
 alias wdev="cd $WORK_DEV && wnode"                                              # Go to work dev dir (set in master profile)
