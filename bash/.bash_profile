@@ -1,10 +1,3 @@
-# version switching
-setjdk() {
-  export JAVA_HOME=$(/usr/libexec/java_home -v 1.$1)
-}
-alias wnode='nvm use 4.8 && npmrc default'
-alias pnode='nvm use 8.0 && npmrc p'
-
 #docker
 alias dkill='docker kill $(docker ps -aqf status=running)'
 alias drm='docker rm -f $(docker ps -aqf status=exited)'
@@ -33,16 +26,24 @@ alias gd='git diff'
 alias gl='git log'
 alias gs='git status'
 
-# build
-alias mbld='mvn clean install -DskipTests=true'
+# javascript
+alias nrb='npm run build'
+alias nrs='npm run start'
+alias nrt='npm run test'
+alias ni='npm install'
+alias gsf='grunt serveFast'
+alias wnode='nvm use 4.8 && npmrc default'
+alias pnode='nvm use 8.0 && npmrc p'
+
+# java
 mavenTest() {
         mvn clean test -Dtest="${1}"
 }
+setjdk() {
+  export JAVA_HOME=$(/usr/libexec/java_home -v 1.$1)
+}
+alias mbld='mvn clean install -DskipTests=true'
 alias mtest='mavenTest'
-alias gsf='grunt serveFast'
-alias nrb='npm run build'
-alias nrs='npm run start'
-alias ni='npm install'
 
 # navigation
 alias wdev="cd $WORK_DEV && wnode"                                              # Go to work dev dir (set in master profile)
