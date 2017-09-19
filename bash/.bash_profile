@@ -64,3 +64,4 @@ alias ports='netstat -tulanp'                                                   
 alias c='clear'                                                                 # Clear terminal display
 alias ij='open -a /Applications/IntelliJ\ IDEA.app/Contents/MacOS/idea .'       # Open InteliJ       
 alias nyan='docker run -it --rm supertest2014/nyan'                             # Show nyancat
+alias devserv='python -m SimpleHTTPServer 8000'
