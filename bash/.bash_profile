@@ -37,13 +37,19 @@ alias pnode='nvm use 8.0 && npmrc p'
 
 # java
 mavenTest() {
-        mvn clean test -Dtest="${1}"
+  mvn clean test -Dtest="${1}" -DdbPort=5433
+}
+mavenDebugTest() {
+  mvn -Dmaven.surefire.debug="-Xdebug -Xrunjdwp:transport=dt_socket,server=y,suspend=y,address=5555 -Xnoagent -Djava.compiler=NONE" test -Dtest="${1}" -DdbPort=5433
 }
 setjdk() {
   export JAVA_HOME=$(/usr/libexec/java_home -v 1.$1)
 }
 alias mbld='mvn clean install -DskipTests=true'
 alias mtest='mavenTest'
+alias mdtest='mavenDebugTest'
+alias mtestall='mvn test -DdbPort=5433'
+alias mdtestall='mvn -Dmaven.surefire.debug="-Xdebug -Xrunjdwp:transport=dt_socket,server=y,suspend=y,address=5555 -Xnoagent -Djava.compiler=NONE" test -DdbPort=5433'
 
 # navigation
 alias wdev="cd $WORK_DEV && wnode"                                              # Go to work dev dir (set in master profile)
