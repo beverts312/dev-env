@@ -4,6 +4,7 @@ alias drm='docker rm -f $(docker ps -aqf status=exited)'
 alias drmf='dkill && drm'
 alias drmi='docker rmi -f $(docker images -q)'
 alias dps='docker ps --format "{{.ID}}; {{.Image}}; {{.Ports}}"'
+alias dpsn='docker ps --format "{{.ID}} {{.Names}}"'
 alias de='docker exec -it '
 alias dl='docker logs '
 alias dstat='docker stats '
@@ -17,6 +18,7 @@ dsh() {
 drf() {
   docker restart ${1} && docker logs -f ${1}
 }
+
 
 # git
 alias gpr='git pull upstream develop --rebase'
