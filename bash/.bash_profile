@@ -14,6 +14,9 @@ alias d='docker'
 dsh() {
   docker exec -it ${1} sh
 }
+drf() {
+  docker restart ${1} && docker logs -f ${1}
+}
 
 # git
 alias gpr='git pull upstream develop --rebase'
@@ -71,3 +74,4 @@ alias c='clear'                                                                 
 alias ij='open -a /Applications/IntelliJ\ IDEA.app/Contents/MacOS/idea .'       # Open InteliJ       
 alias nyan='docker run -it --rm supertest2014/nyan'                             # Show nyancat
 alias devserv='python -m SimpleHTTPServer 8000'
+alias cleardev='rm -r $HOME/dev/env'
