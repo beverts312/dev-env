@@ -77,3 +77,9 @@ alias ij='open -a /Applications/IntelliJ\ IDEA.app/Contents/MacOS/idea .'       
 alias nyan='docker run -it --rm supertest2014/nyan'                             # Show nyancat
 alias devserv='python -m SimpleHTTPServer 8000'
 alias cleardev='rm -r $HOME/dev/env'
+
+# osx only
+alias partytime='say -v yuri "its party time"'
+alias fdup='say -v yuri "you fucked up big time"'
+alias rageslow='say -r 20 "lets fucking rage"'
+alias rages='say "lets fucking rage"'
