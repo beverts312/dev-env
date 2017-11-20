@@ -35,10 +35,11 @@ alias gs='git status'
 alias nrb='npm run build'
 alias nrs='npm run start'
 alias nrt='npm run test'
+alias nrtw='npm run test:watch'
 alias ni='npm install'
 alias gsf='grunt serveFast'
 alias wnode='nvm use 4.8 && npmrc default'
-alias pnode='nvm use 8.0 && npmrc p'
+alias pnode='nvm use 8.9 && npmrc p'
 
 # java
 mavenTest() {
