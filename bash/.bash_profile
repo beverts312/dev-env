@@ -33,6 +33,7 @@ alias gs='git status'
 
 # javascript
 alias nrb='npm run build'
+alias nrf='npm run format'
 alias nrs='npm run start'
 alias nrt='npm run test'
 alias nrtw='npm run test:watch'
