@@ -79,6 +79,7 @@ alias ij='open -a /Applications/IntelliJ\ IDEA.app/Contents/MacOS/idea .'       
 alias nyan='docker run -it --rm supertest2014/nyan'                             # Show nyancat
 alias devserv='python -m SimpleHTTPServer 8000'
 alias cleardev='rm -r $HOME/dev/env'
+alias newpass='openssl rand -base64 15'
 
 # osx only
 alias partytime='say -v yuri "its party time"'
