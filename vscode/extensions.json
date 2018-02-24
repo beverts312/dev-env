@@ -21,6 +21,7 @@
         "redhat.java",
         "ms-vscode.powershell",
         "donjayamanne.python",
-        "itryapitsin.scala"
+        "itryapitsin.scala",
+        "mike-co.import-sorter"
     ]
 }

@@ -1,0 +1,47 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug in Chrome",
+            "type": "chrome",
+            "request": "launch",
+            "url": "http://localhost:9001/",
+            "sourceMaps": true,
+            "webRoot": "${workspaceRoot}",
+            "sourceMapPathOverrides": {
+                "webpack:///./*": "${webRoot}/*"
+            }
+        },
+        {
+            "name": "Debug in Firefox",
+            "type": "firefox",
+            "request": "launch",
+            "url": "http://localhost:9001/",
+            "webRoot": "${workspaceRoot}",
+            "sourceMaps": "client",
+            "pathMappings": [
+                {
+                    "url": "webpack:///",
+                    "path": "${webRoot}/"
+                }
+            ]
+        },
+        {
+            "name": "Debug Jest",
+            "type": "node",
+            "request": "launch",
+            "runtimeArgs": [
+                "./node_modules/.bin/jest",
+                "-i"
+            ],
+            "cwd": "${workspaceRoot}",
+            "protocol": "inspector",
+            "console": "internalConsole",
+            "sourceMaps": true,
+            "outFiles": [
+                "${workspaceRoot}/src",
+                "${workspaceRoot}/test"
+            ]
+        }
+    ]
+}

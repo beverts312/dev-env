@@ -1,13 +1,28 @@
 {
     "editor.fontLigatures": true,
     "editor.fontFamily": "Monoid",
-    
     "git.confirmSync": false,
     "git.enableSmartCommit": true,
-    
+    "spell.StopAsking": true,
+    "typescript.check.tscVersion": false,
+    "typescript.check.workspaceVersion": false,
+    "vsicons.projectDetection.autoReload": true,
     "vsicons.projectDetection.disableDetect": true,
-    
+    "window.zoomLevel": 0,
+    "workbench.colorTheme": "Monokai Dimmed",    
     "workbench.iconTheme": "vscode-icons",
     
-    "window.zoomLevel": 0
+    "files.exclude": {
+        "**/*.js": {
+            "when": "$(basename).ts"
+        },
+        "**/*.map": {
+            "when": "$(basename).map"
+        },
+        "**/.git": true,
+        "**/.svn": true,
+        "**/.hg": true,
+        "**/CVS": true,
+        "**/.DS_Store": true
+    }
 }
