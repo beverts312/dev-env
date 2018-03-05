@@ -8,6 +8,13 @@
             "url": "http://localhost:3000",
             "webRoot": "${workspaceRoot}/src",
             "port": 9222
+        },
+        {
+            "name": "Debug in Firefox",
+            "type": "firefox",
+            "request": "launch",
+            "url": "http://localhost:3000",
+            "webRoot": "${workspaceRoot}/src"
         }
     ]
 }
