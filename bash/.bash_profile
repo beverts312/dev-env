@@ -30,6 +30,7 @@ alias gc='git commit -m'
 alias gd='git diff'
 alias gl='git log'
 alias gs='git status'
+alias glola='git log --graph --pretty="%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset" --abbrev-commit --all'
 
 # javascript
 alias nrb='npm run build'
@@ -41,7 +42,7 @@ alias ni='npm install'
 alias gsf='grunt serveFast'
 alias wnode='nvm use 4.8 && npmrc default'
 alias pnode='nvm use 8.9 && npmrc p'
-
+alias resethooks='rm -rf node_modules && npm i'
 # java
 mavenTest() {
   mvn clean test -Dtest="${1}" -DdbPort=5433
