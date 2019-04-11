@@ -19,7 +19,6 @@ drf() {
   docker restart ${1} && docker logs -f ${1}
 }
 
-
 # git
 alias gpr='git pull upstream develop --rebase'
 alias gpu='git pull upstream develop'
@@ -32,6 +31,8 @@ alias gd='git diff'
 alias gl='git log'
 alias gs='git status'
 alias glola='git log --graph --pretty="%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset" --abbrev-commit --all'
+alias gdc='git diff $(git rev-parse HEAD)'
+alias gdl='git diff $(git rev-parse HEAD^1) $(git rev-parse HEAD)'
 
 # javascript
 alias nrb='npm run build'
