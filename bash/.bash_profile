@@ -61,7 +61,9 @@ mavenDebugTest() {
 setjdk() {
   export JAVA_HOME=$(/usr/libexec/java_home -v 1.$1)
 }
-
+msv() {
+  mvn versions:set -DgenerateBackupPoms=false -DnewVersion="${1}"
+}
 alias mbld='mvn clean install -DskipTests=true'
 alias mtest='mavenTest'
 alias mdtest='mavenDebugTest'
