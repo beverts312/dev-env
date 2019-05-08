@@ -19,6 +19,11 @@ drf() {
   docker restart ${1} && docker logs -f ${1}
 }
 
+#kubernetes
+source <(kubectl completion bash)
+alias k='kubectl'
+complete -F __start_kubectl k
+
 # git
 alias gpr='git pull upstream develop --rebase'
 alias gpu='git pull upstream develop'
@@ -56,6 +61,7 @@ mavenDebugTest() {
 setjdk() {
   export JAVA_HOME=$(/usr/libexec/java_home -v 1.$1)
 }
+
 alias mbld='mvn clean install -DskipTests=true'
 alias mtest='mavenTest'
 alias mdtest='mavenDebugTest'
