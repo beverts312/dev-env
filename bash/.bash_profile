@@ -86,6 +86,7 @@ alias ~='cd ~'                                                                  
 alias ls='ls -G'                                                                # Colorize ls
 alias ll='ls -la'                                                               # Long ls
 alias ports='netstat -tulanp'                                                   # Show Ports
+alias a='alias'                                                                 # Alias
 alias c='clear'                                                                 # Clear terminal display
 alias ij='open -a /Applications/IntelliJ\ IDEA.app/Contents/MacOS/idea .'       # Open InteliJ       
 alias nyan='docker run -it --rm supertest2014/nyan'                             # Show nyancat
