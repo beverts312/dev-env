@@ -8,4 +8,4 @@ Define these variables in your bash profile:
 * `DEV_HOME` - top level directory for dev work
 * `DEV_ENV_HOME` - directory you cloned this to
 
-Add a `source $DEV_ENV_HOME/bash/.bash_profile` to your bash profile.
+Add a `source $DEV_ENV_HOME/.bash_profile` to your bash profile.
