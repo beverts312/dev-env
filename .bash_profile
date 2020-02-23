@@ -93,3 +93,4 @@ alias c='clear'                                                                 
 alias nyan='docker run -it --rm supertest2014/nyan'                             # Show nyancat
 alias devserv='python -m SimpleHTTPServer 8000'
 alias newpass='openssl rand -base64 15'
+alias toBase64="python $DEV_ENV_HOME/misc/to-base64.py"
