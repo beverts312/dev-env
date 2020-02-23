@@ -25,8 +25,7 @@ alias k='kubectl'
 complete -F __start_kubectl k
 
 # git
-alias gpr='git pull upstream develop --rebase'
-alias gpu='git pull upstream develop'
+alias gpr='git pull upstream ${1:-master} --rebase'
 alias gco='git checkout -b ${1}'
 alias guc='git reset --soft HEAD^'
 alias grh='git reset --hard ${1}'
@@ -74,8 +73,6 @@ alias mtestall='mvn test -DdbPort=5433'
 alias mdtestall='mvn -Dmaven.surefire.debug="-Xdebug -Xrunjdwp:transport=dt_socket,server=y,suspend=y,address=5555 -Xnoagent -Djava.compiler=NONE" test -DdbPort=5433'
 
 # navigation
-alias wdev="cd $WORK_DEV && wnode"                                              # Go to work dev dir (set in master profile)
-alias pdev="cd $MY_DEV"                                                         # Go to personal dev dir (set in master profile)
 alias cd..='cd ../'                                                             # Go back 1 directory level (for fast typers)
 alias ..='cd ../'                                                               # Go back 1 directory level
 alias ...='cd ../../'                                                           # Go back 2 directory levels
