@@ -38,6 +38,7 @@ alias gs='git status'
 alias glola='git log --graph --pretty="%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset" --abbrev-commit --all'
 alias gdc='git diff $(git rev-parse HEAD)'
 alias gdl='git diff $(git rev-parse HEAD^1) $(git rev-parse HEAD)'
+alias clone="$DEV_ENV_HOME/git/clone.sh"
 
 # javascript
 alias nrb='npm run build'
@@ -48,9 +49,11 @@ alias nrw='npm run watch'
 alias nrtw='npm run test:watch'
 alias ni='npm install'
 alias gsf='grunt serveFast'
-alias wnode='nvm use 4.8 && npmrc default'
-alias pnode='nvm use 8.9 && npmrc p'
-alias resethooks='rm -rf node_modules && npm i'
+alias yb='yarn build'
+alias yi='yarn install'
+alias yt='yarn test'
+alias ytw='yarn test:watch'
+
 # java
 mavenTest() {
   mvn clean test -Dtest="${1}" -DdbPort=5433
@@ -81,6 +84,8 @@ alias .4='cd ../../../../'                                                      
 alias .5='cd ../../../../../'                                                   # Go back 5 directory levels
 alias .6='cd ../../../../../../'                                                # Go back 6 directory levels
 alias ~='cd ~'                                                                  # Go Home
+alias dev="cd $DEV_HOME"
+alias work="cd $WORK_HOME"
 
 # other
 alias ls='ls -G'                                                                # Colorize ls
@@ -88,14 +93,6 @@ alias ll='ls -la'                                                               
 alias ports='netstat -tulanp'                                                   # Show Ports
 alias a='alias'                                                                 # Alias
 alias c='clear'                                                                 # Clear terminal display
-alias ij='open -a /Applications/IntelliJ\ IDEA.app/Contents/MacOS/idea .'       # Open InteliJ       
 alias nyan='docker run -it --rm supertest2014/nyan'                             # Show nyancat
 alias devserv='python -m SimpleHTTPServer 8000'
-alias cleardev='rm -r $HOME/dev/env'
 alias newpass='openssl rand -base64 15'
-
-# osx only
-alias partytime='say -v yuri "its party time"'
-alias fdup='say -v yuri "you fucked up big time"'
-alias rageslow='say -r 20 "lets fucking rage"'
-alias rages='say "lets fucking rage"'
