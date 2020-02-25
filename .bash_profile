@@ -61,7 +61,7 @@ mavenDebugTest() {
   mvn -Dmaven.surefire.debug="-Xdebug -Xrunjdwp:transport=dt_socket,server=y,suspend=y,address=5555 -Xnoagent -Djava.compiler=NONE" test -Dtest="${1}" -DdbPort=5433
 }
 setjdk() {
-  export JAVA_HOME=$(/usr/libexec/java_home -v 1.$1)
+  sudo update-java-alternatives --set /usr/lib/jvm/java-1.$1.0-openjdk-amd64
 }
 msv() {
   mvn versions:set -DgenerateBackupPoms=false -DnewVersion="${1}"
@@ -94,3 +94,4 @@ alias nyan='docker run -it --rm supertest2014/nyan'                             
 alias devserv='python -m SimpleHTTPServer 8000'
 alias newpass='openssl rand -base64 15'
 alias toBase64="python $DEV_ENV_HOME/misc/to-base64.py"
+alias scanwork="$DEV_ENV_HOME/misc/avahi-scan.sh $WORK_WIFI_CIDR"
