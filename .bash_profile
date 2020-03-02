@@ -83,6 +83,7 @@ alias .6='cd ../../../../../../'                                                
 alias ~='cd ~'                                                                  # Go Home
 alias dev="cd $DEV_HOME"
 alias work="cd $WORK_HOME"
+alias devenv="cd $DEV_ENV_HOME"
 
 # other
 alias ls='ls -G'                                                                # Colorize ls
