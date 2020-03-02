@@ -94,4 +94,10 @@ alias nyan='docker run -it --rm supertest2014/nyan'                             
 alias devserv='python -m SimpleHTTPServer 8000'
 alias newpass='openssl rand -base64 15'
 alias toBase64="python $DEV_ENV_HOME/misc/to-base64.py"
+
+# network
 alias scanwork="$DEV_ENV_HOME/misc/avahi-scan.sh $WORK_WIFI_CIDR"
+
+checkPidTraffic() {
+  sudo strace -p $1 -e trace=network -s 10000
+}
