@@ -87,7 +87,7 @@ alias devenv="cd $DEV_ENV_HOME"
 
 # other
 alias ls='ls -G'                                                                # Colorize ls
-alias ll='ls -la'                                                               # Long ls
+alias ll='ls -lah'                                                              # Long ls with human readable sizes
 alias ports='netstat -tulanp'                                                   # Show Ports
 alias a='alias'                                                                 # Alias
 alias c='clear'                                                                 # Clear terminal display
