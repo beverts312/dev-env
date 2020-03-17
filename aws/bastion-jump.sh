@@ -29,6 +29,7 @@ while getopts h:p:k:u:i:r:L opt ; do
   esac
 done
 
+export AWS_DEFAULT_OUTPUT=json
 export AWS_DEFAULT_REGION
 if [[ -z $BASTION_ID ]] ; then
     echo "Bastion ID required"
