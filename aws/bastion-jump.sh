@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -x
 unset HOST
 unset KEY
 unset BASTION_ID
