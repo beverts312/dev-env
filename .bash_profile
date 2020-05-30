@@ -71,6 +71,9 @@ alias mtest='mavenTest'
 alias mdtest='mavenDebugTest'
 alias mtestall='mvn test -DdbPort=5433'
 alias mdtestall='mvn -Dmaven.surefire.debug="-Xdebug -Xrunjdwp:transport=dt_socket,server=y,suspend=y,address=5555 -Xnoagent -Djava.compiler=NONE" test -DdbPort=5433'
+alias gwa='gw assemble'
+alias gwd='gw docker'
+alias gww='gw war'
 
 # navigation
 alias cd..='cd ../'                                                             # Go back 1 directory level (for fast typers)
@@ -98,10 +101,21 @@ alias toBase64="python $DEV_ENV_HOME/misc/to-base64.py"
 psaux() {
   ps aux | grep $1 | grep -v grep | awk '{$1=$3=$4=$5=$6=$7=$8=$9=$10=""; print $0}'
 }
+sshc() {
+  cat ~/.ssh/config | grep -w Host | awk '{print $2}'
+}
+h() {
+  history | grep $1
+}
 
 # network
 alias scanwork="$DEV_ENV_HOME/misc/avahi-scan.sh $WORK_WIFI_CIDR"
 
 checkPidTraffic() {
   sudo strace -p $1 -e trace=network -s 10000
+}
+
+# aws
+awsi() {
+  aws ec2 describe-instances --query 'Reservations[].Instances[].[InstanceId,PrivateIpAddress,State.Name,Tags[?Key==`Name`] | [0].Value]'
 }
