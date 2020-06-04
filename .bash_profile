@@ -115,7 +115,4 @@ checkPidTraffic() {
   sudo strace -p $1 -e trace=network -s 10000
 }
 
-# aws
-awsi() {
-  aws ec2 describe-instances --query 'Reservations[].Instances[].[InstanceId,PrivateIpAddress,State.Name,Tags[?Key==`Name`] | [0].Value]'
-}
+source $DEV_ENV_HOME/aws/aliases.sh
