@@ -10,3 +10,7 @@ awsdb() {
 awsreg() {
     export AWS_DEFAULT_REGION=${1}
 }
+
+awssi() {
+  aws ec2 start-instances --instance-id ${1}
+}
