@@ -1,0 +1,251 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Configures Inspector for a resources with a specific tag key value pair
+
+Parameters:
+  TagKey:
+    Description: Tag Key to match on
+    Type: String
+    AllowedPattern: '[\x20-\x7E]*'
+    ConstraintDescription: can contain only ASCII characters
+  TagValue:
+    Description: Tag Value to match on
+    Type: String
+    AllowedPattern: '[\x20-\x7E]*'
+    ConstraintDescription: can contain only ASCII characters
+  ResourceNamePrefix:
+    Description: Provide string to be the prefix for all resources created within the stack
+    Type: String
+    AllowedPattern: '[\x20-\x7E]*'
+    ConstraintDescription: can contain only ASCII characters
+  SubscriptionEmailAddress:
+    Description: Email address to use for SNS Subscription.
+    Type: String
+    AllowedPattern: "^[\\w-\\+]+(\\.[\\w]+)*@[\\w-]+(\\.[\\w]+)*(\\.[a-z]{2,})$"
+    ConstraintDescription: must be a valid email address
+
+Mappings:
+  RegionMap:
+    us-east-1:
+      vulnerabilityArn: arn:aws:inspector:us-east-1:316112463485:rulespackage/0-gEjTy7T7
+      configBenchmarchArn: arn:aws:inspector:us-east-1:316112463485:rulespackage/0-rExsr2X8
+      netowrkReachabilityArn: arn:aws:inspector:us-east-1:316112463485:rulespackage/0-PmNV0Tcd
+      securityBestParacticesArn: arn:aws:inspector:us-east-1:316112463485:rulespackage/0-R01qwB5Q
+      inspectorAccountArn: arn:aws:iam::316112463485:root
+    us-east-2:
+      vulnerabilityArn: arn:aws:inspector:us-east-2:646659390643:rulespackage/0-JnA8Zp85
+      configBenchmarchArn: arn:aws:inspector:us-east-2:646659390643:rulespackage/0-m8r61nnh
+      netowrkReachabilityArn: arn:aws:inspector:us-east-2:646659390643:rulespackage/0-cE4kTR30
+      securityBestParacticesArn: arn:aws:inspector:us-east-2:646659390643:rulespackage/0-AxKmMHPX
+      inspectorAccountArn: arn:aws:iam::646659390643:root
+    us-west-1:
+      vulnerabilityArn: arn:aws:inspector:us-west-1:166987590008:rulespackage/0-TKgzoVOa
+      configBenchmarchArn: arn:aws:inspector:us-west-1:166987590008:rulespackage/0-xUY8iRqX
+      netowrkReachabilityArn: arn:aws:inspector:us-west-1:166987590008:rulespackage/0-TxmXimXF
+      securityBestParacticesArn: arn:aws:inspector:us-west-1:166987590008:rulespackage/0-byoQRFYm
+      inspectorAccountArn: arn:aws:iam::166987590008:root
+    us-west-2:
+      vulnerabilityArn: arn:aws:inspector:us-west-2:758058086616:rulespackage/0-9hgA516p
+      configBenchmarchArn: arn:aws:inspector:us-west-2:758058086616:rulespackage/0-H5hpSawc
+      netowrkReachabilityArn: arn:aws:inspector:us-west-2:758058086616:rulespackage/0-rD1z6dpl
+      securityBestParacticesArn: arn:aws:inspector:us-west-2:758058086616:rulespackage/0-JJOtZiqQ
+      inspectorAccountArn: arn:aws:iam::758058086616:root
+    eu-central-1:
+      vulnerabilityArn: arn:aws:inspector:eu-central-1:537503971621:rulespackage/0-wNqHa8M9
+      configBenchmarchArn: arn:aws:inspector:eu-central-1:537503971621:rulespackage/0-nZrAVuv8
+      netowrkReachabilityArn: arn:aws:inspector:eu-central-1:537503971621:rulespackage/0-6yunpJ91
+      securityBestParacticesArn: arn:aws:inspector:eu-central-1:537503971621:rulespackage/0-ZujVHEPB
+      inspectorAccountArn: arn:aws:iam::537503971621:root
+    eu-west-1:
+      vulnerabilityArn: arn:aws:inspector:eu-west-1:357557129151:rulespackage/0-ubA5XvBh
+      configBenchmarchArn: arn:aws:inspector:eu-west-1:357557129151:rulespackage/0-sJBhCr0F
+      netowrkReachabilityArn: arn:aws:inspector:eu-west-1:357557129151:rulespackage/0-SPzU33xe
+      securityBestParacticesArn: arn:aws:inspector:eu-west-1:357557129151:rulespackage/0-SnojL3Z6
+      inspectorAccountArn: arn:aws:iam::357557129151:root
+    eu-west-2:
+      vulnerabilityArn: arn:aws:inspector:eu-west-2:146838936955:rulespackage/0-kZGCqcE1
+      configBenchmarchArn: arn:aws:inspector:eu-west-2:146838936955:rulespackage/0-IeCjwf1W
+      netowrkReachabilityArn: arn:aws:inspector:eu-west-2:146838936955:rulespackage/0-AizSYyNq
+      securityBestParacticesArn: arn:aws:inspector:eu-west-2:146838936955:rulespackage/0-XApUiSaP
+      inspectorAccountArn: arn:aws:iam::146838936955:root
+
+Resources:
+  InspectorTarget:
+    Type: AWS::Inspector::AssessmentTarget
+    Properties:
+      AssessmentTargetName: !Sub ${ResourceNamePrefix}-ec2-inspector
+      ResourceGroupArn: !Ref InspectorGroup
+
+  InspectorGroup:
+    Type: AWS::Inspector::ResourceGroup
+    Properties:
+      ResourceGroupTags:
+        - Key: !Ref TagKey
+          Value: !Ref TagValue
+
+  InspectorTemplate:
+    Type: AWS::Inspector::AssessmentTemplate
+    Properties:
+      AssessmentTargetArn: !Ref InspectorTarget
+      AssessmentTemplateName: !Sub ${ResourceNamePrefix}-inspector
+      DurationInSeconds: 3600
+      RulesPackageArns:
+        - !FindInMap [ RegionMap, !Ref "AWS::Region", vulnerabilityArn ]
+        - !FindInMap [ RegionMap, !Ref "AWS::Region", configBenchmarchArn ]
+        - !FindInMap [ RegionMap, !Ref "AWS::Region", netowrkReachabilityArn ]
+        - !FindInMap [ RegionMap, !Ref "AWS::Region", securityBestParacticesArn ]
+
+  InspectorTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub ${ResourceNamePrefix}-Inspector
+      DisplayName: !Sub ${ResourceNamePrefix}-Inspector
+
+  InspectorSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint: !Ref SubscriptionEmailAddress
+      Protocol: email
+      TopicArn: !Ref InspectorTopic
+
+  InspectorSnsPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref InspectorTopic
+      PolicyDocument:
+        Version: 2008-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !FindInMap [ RegionMap, !Ref "AWS::Region", inspectorAccountArn ]
+            Action:
+              - SNS:Publish
+              - SNS:Subscribe
+              - SNS:Receive
+            Resource: !Ref InspectorTopic
+
+  InspectorConfigure:
+    Type: "Custom::Configurator"
+    Properties:
+      ServiceToken: !GetAtt InspectorConfigureFunction.Arn
+      InspectorTemplate: !Ref InspectorTemplate
+      InspectorTopic: !Ref InspectorTopic
+
+  InspectorConfigureFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Configures inspector schedule and subscription
+      Handler: index.handler
+      Code:
+        ZipFile: |
+          var AWS = require('aws-sdk');
+          var inspector = new AWS.Inspector();
+          var response = require('cfn-response');
+          exports.handler = (event, context) => {
+            inspector.subscribeToEvent(
+              { event: 'FINDING_REPORTED', resourceArn: event['ResourceProperties']['InspectorTemplate'], topicArn: event['ResourceProperties']['InspectorTopic'] },
+              (err, data) =>  response.send(event, context, err ? "FAILED" : "SUCCESS", err)
+            );
+          };
+      MemorySize: 128
+      Role: !GetAtt InspectorConfigureLambdaExecutionRole.Arn
+      Runtime: nodejs12.x
+      Timeout: 30
+
+  InspectorConfigureLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource: arn:aws:logs:*:*:*
+          - Effect: Allow
+            Action:
+              - inspector:SubscribeToEvent
+            Resource: "*"
+
+  InspectorRunFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Triggers the inspection
+      Environment:
+        Variables:
+          ASSESSMENT_TEMPLATE: !Ref InspectorTemplate
+      Handler: index.handler
+      Code:
+        ZipFile: |
+          var AWS = require('aws-sdk');
+          var inspector = new AWS.Inspector();
+          exports.handler = (event, context) => {
+            inspector.startAssessmentRun(
+              {
+                assessmentRunName: `lb-inspect-${Math.round((new Date()).getTime() / 1000)}`,
+                assessmentTemplateArn: process.env['ASSESSMENT_TEMPLATE']
+              },
+              (err, data) =>  err ? console.log(err, err.stack) : console.log(data)
+            );
+          };
+      MemorySize: 128
+      Role: !GetAtt InspectorScanLambdaExecutionRole.Arn
+      Runtime: nodejs12.x
+      Timeout: 30
+
+  InspectorScanLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource: arn:aws:logs:*:*:*
+          - Effect: Allow
+            Action:
+              - inspector:StartAssessmentRun
+            Resource: "*"
+
+  InspectorRunTrigger:
+    Type: AWS::Events::Rule
+    Properties:
+      ScheduleExpression: rate(1 day)
+      Targets:
+        - Arn: !GetAtt InspectorRunFunction.Arn
+          Id: !Sub ${ResourceNamePrefix}-inspector-run
+
+  InvokeLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt InspectorRunFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt InspectorRunTrigger.Arn
