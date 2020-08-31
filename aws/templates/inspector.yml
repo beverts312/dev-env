@@ -195,7 +195,7 @@ Resources:
           exports.handler = (event, context) => {
             inspector.startAssessmentRun(
               {
-                assessmentRunName: `lb-inspect-${Math.round((new Date()).getTime() / 1000)}`,
+                assessmentRunName: `inspect-${Math.round((new Date()).getTime() / 1000)}`,
                 assessmentTemplateArn: process.env['ASSESSMENT_TEMPLATE']
               },
               (err, data) =>  err ? console.log(err, err.stack) : console.log(data)
