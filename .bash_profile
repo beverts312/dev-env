@@ -18,11 +18,7 @@ dsh() {
 drf() {
   docker restart ${1} && docker logs -f ${1}
 }
-
-#kubernetes
-source <(kubectl completion bash)
 alias k='kubectl'
-complete -F __start_kubectl k
 
 # git
 alias gpr='git pull upstream ${1:-master} --rebase'
