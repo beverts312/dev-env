@@ -1,7 +1,7 @@
 # AWS Scripts
 
 ## bastion-jump.sh
-This script enables you to ssh through a bastion withouth having to manually power it on or know its IP.
+This script enables you to ssh through a bastion without having to manually power it on or know its IP.
 To leverage it add a section like this to your `~/.ssh/config` file:
 ```
 Host supersecure

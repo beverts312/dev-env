@@ -24,3 +24,8 @@ ssm() {
   INSTANCE_ID=$(aws ec2 describe-instances --output 'table' --query 'Reservations[].Instances[].[InstanceId,Tags[?Key==`Name`] | [0].Value]' | grep ${1} | awk '{print $2}')
   aws ssm start-session --target ${INSTANCE_ID}
 }
+
+ssmup() {
+  INSTANCE_ID=$(aws ec2 describe-instances --output 'table' --query 'Reservations[].Instances[].[InstanceId,Tags[?Key==`Name`] | [0].Value]' | grep ${1} | awk '{print $2}')
+  aws ssm send-command --instance-ids ${INSTANCE_ID} --document-name AWS-UpdateSSMAgent
+}
