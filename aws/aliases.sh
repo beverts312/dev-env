@@ -29,3 +29,8 @@ ssmup() {
   INSTANCE_ID=$(aws ec2 describe-instances --output 'table' --query 'Reservations[].Instances[].[InstanceId,Tags[?Key==`Name`] | [0].Value]' | grep ${1} | awk '{print $2}')
   aws ssm send-command --instance-ids ${INSTANCE_ID} --document-name AWS-UpdateSSMAgent
 }
+
+cfinv() {
+  DISTRIBUTION_ID=$(aws cloudfront list-distributions --output 'table' --query 'DistributionList.Items[].[Id,Aliases.Items[0]]' | grep ${1} | awk '{print $2}')
+  aws cloudfront create-invalidation --distribution-id ${DISTRIBUTION_ID} --paths "/*"
+}
