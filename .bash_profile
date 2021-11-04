@@ -91,9 +91,10 @@ alias ports='netstat -tulanp'                                                   
 alias a='alias'                                                                 # Alias
 alias c='clear'                                                                 # Clear terminal display
 alias nyan='docker run -it --rm supertest2014/nyan'                             # Show nyancat
-alias devserv='python -m SimpleHTTPServer 8000'
+alias devserv='python -m http.server -b 172.17.211.242 8000'
 alias newpass='openssl rand -base64 15'
-alias toBase64="python $DEV_ENV_HOME/misc/to-base64.py"
+alias toBase64="python $DEV_ENV_HOME/misc/to_base64.py"
+alias jsonToCsv="python $DEV_ENV_HOME/misc/json_to_csv.py"
 psaux() {
   ps aux | grep $1 | grep -v grep | awk '{$1=$3=$4=$5=$6=$7=$8=$9=$10=""; print $0}'
 }
