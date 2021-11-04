@@ -113,3 +113,4 @@ checkPidTraffic() {
 }
 
 source $DEV_ENV_HOME/aws/aliases.sh
+source $DEV_ENV_HOME/azure/aliases.sh
