@@ -21,11 +21,11 @@ drf() {
 alias k='kubectl'
 
 # git
-alias gpr='git pull upstream ${1:-master} --rebase'
-alias gco='git checkout -b ${1}'
-alias guc='git reset --soft HEAD^'
-alias grh='git reset --hard ${1}'
-alias ga='git add'
+alias gpr='git pull upstream ${1:-main} --rebase' # pull+rebase
+alias gco='git checkout -b ${1}'                  # create new branch
+alias guc='git reset --soft HEAD^'                # uncommit last commit
+alias grh='git reset --hard ${1}'                 # hard reset
+alias ga='git add'                         
 alias gc='git commit -m'
 alias gd='git diff'
 alias gl='git log'
@@ -34,6 +34,8 @@ alias glola='git log --graph --pretty="%Cred%h%Creset -%C(yellow)%d%Creset %s %C
 alias gdc='git diff $(git rev-parse HEAD)'
 alias gdl='git diff $(git rev-parse HEAD^1) $(git rev-parse HEAD)'
 alias clone="$DEV_ENV_HOME/git/clone.sh"
+alias gr='git rev-parse --show-toplevel'          # output top level path for repo
+alias cdr='cd $(gr)'                              # navigate to top level path of repo
 
 # javascript
 alias nrb='npm run build'
