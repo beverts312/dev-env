@@ -1,0 +1,21 @@
+version: "3.9"
+services:
+  sd:
+    image: beverts312/stable-diffusion
+    ports:
+      - "7860:7860"
+    volumes:
+      - ./volumes/sd-data:/home/mluser/data
+      - ./volumes/output:/home/mluser/stable-diffusion/outputs/txt2img-samples/
+      - sd-cache:/home/mluser/.cache
+    environment:
+      - NVIDIA_DISABLE_REQUIRE=true
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+volumes:
+  sd-cache:

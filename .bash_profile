@@ -18,6 +18,11 @@ dsh() {
 drf() {
   docker restart ${1} && docker logs -f ${1}
 }
+dbuild() {
+  img_tag=${1:-latest}
+  img_name=${PWD##*/}  
+  docker build -t beverts312/${img_name}:${img_tag} .
+}
 alias k='kubectl'
 
 # git
