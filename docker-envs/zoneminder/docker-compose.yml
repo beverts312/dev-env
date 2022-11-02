@@ -1,0 +1,21 @@
+version: '3.1'
+services:
+    zoneminder:
+        container_name: zoneminder
+        image: dlandon/zoneminder.machine.learning
+        restart: unless-stopped
+        ports:
+            - 9080:80/tcp
+            - 9000:9000/tcp
+        network_mode: "bridge"
+        privileged: true
+        environment:
+            - TZ=America/Denver
+            - PUID=99
+            - PGID=100
+            - MULTI_PORT_START=0
+            - MULTI_PORT_END=0
+        volumes:
+            - ./volumes/config:/config:rw 
+            - ./volumes/data:/var/cache/zoneminder:rw 
+        shm_size: 8G    
