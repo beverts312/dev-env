@@ -1,0 +1,26 @@
+version: "3.9"
+services:
+  dc:
+    image: beverts312/diffusion-clip
+    entrypoint: bash
+    user: 1000:1000
+    volumes:
+      - ./volumes/pretrained:/home/mluser/diffusion-clip/pretrained
+      - ./volumes/data:/home/mluser/diffusion-clip/data
+      - ./volumes/working:/home/mluser/working
+      - dc-cache:/home/mluser/.cache
+    environment:
+      - NVIDIA_DISABLE_REQUIRE=true
+      # - CUDNN_LOGINFO_DBG=1
+      # - CUDNN_LOGDEST_DBG=stdout
+      # - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:2048
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  dc-cache:
