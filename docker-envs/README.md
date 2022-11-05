@@ -1,3 +1,4 @@
 # Docker Environments
+Collection of docker-compose and Dockerfiles.
 
-Many images will require the [Cuda container toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) properly configured in order for them to work.
+Read [this](./mlbase/) if using any machine learning images.
