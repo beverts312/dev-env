@@ -1,0 +1,3 @@
+[submodule "machine-learning"]
+	path = machine-learning
+	url = git@github.com:beverts312/machine-learning.git
