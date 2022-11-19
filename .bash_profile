@@ -23,6 +23,18 @@ dbuild() {
   img_name=${PWD##*/}  
   docker build -t beverts312/${img_name}:${img_tag} .
 }
+dwps() {
+  orig_image=${1}
+  work_image=${WORK_REGISTRY}/${orig_image}
+  docker tag ${orig_image} ${work_image}
+  docker push ${work_image}
+}
+dwpl() {
+  orig_image=${1}
+  work_image=${WORK_REGISTRY}/${orig_image}
+  docker pull ${work_image}
+  docker tag ${work_image} ${orig_image}
+}
 alias k='kubectl'
 
 # git

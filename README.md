@@ -9,5 +9,6 @@ Define these variables in your bash profile:
 * `GITHUB_USERS` - other github users who work you may pull seperated by commas
 * `DEV_HOME` - top level directory for dev work
 * `DEV_ENV_HOME` - directory you cloned this to
+* `WORK_REGISTRY` - base url for your work's docker registry
 
 Add a `source $DEV_ENV_HOME/.bash_profile` to your bash profile.
