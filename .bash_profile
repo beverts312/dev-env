@@ -54,6 +54,10 @@ alias clone="$DEV_ENV_HOME/git/clone.sh"
 alias gr='git rev-parse --show-toplevel'          # output top level path for repo
 alias cdr='cd $(gr)'                              # navigate to top level path of repo
 
+# python
+alias pinit="$DEV_ENV_HOME/misc/python_init.sh"
+alias v='source venv/bin/activate'
+
 # javascript
 alias nrb='npm run build'
 alias nrf='npm run format'
