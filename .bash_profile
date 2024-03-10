@@ -58,6 +58,17 @@ alias cdr='cd $(gr)'                              # navigate to top level path o
 alias pinit="$DEV_ENV_HOME/misc/python_init.sh"
 alias v='source venv/bin/activate'
 
+# terraform
+alias tf='terraform'
+alias tfi='terraform init'
+alias tg='terragrunt'
+alias tgi='terragrunt init'
+alias tgp='terragrunt plan'
+alias tga='terragrunt apply'
+alias tgaf='terragrunt apply --auto-approve'
+alias tgd='terragrunt destroy'
+alias tgdf='terragrunt destroy --auto-approve'
+
 # javascript
 alias nrb='npm run build'
 alias nrf='npm run format'
