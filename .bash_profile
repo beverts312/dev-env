@@ -130,6 +130,9 @@ alias newpass='openssl rand -base64 15'
 alias toBase64="python $DEV_ENV_HOME/misc/to_base64.py"
 alias jsonToCsv="python $DEV_ENV_HOME/misc/json_to_csv.py"
 alias mmux="tmux source-file $DEV_ENV_HOME/configs/tmux.conf"
+txt() {
+  dig -t txt ${1}
+}
 qbup() {
   aws s3 cp ${1} s3://${BACKUP_BUCKET}/ ${BACKUP_ARGS}
 }
