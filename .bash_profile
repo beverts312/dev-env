@@ -36,7 +36,10 @@ dwpl() {
   docker tag ${work_image} ${orig_image}
 }
 alias k='kubectl'
-
+kns() {
+  kubectl config set-context --current --namespace ${1}
+  export HELM_NAMESPACE=${1}
+}
 # git
 alias gpr='git pull upstream ${1:-main} --rebase' # pull+rebase
 alias gco='git checkout -b ${1}'                  # create new branch
@@ -68,6 +71,11 @@ alias tga='terragrunt apply'
 alias tgaf='terragrunt apply --auto-approve'
 alias tgd='terragrunt destroy'
 alias tgdf='terragrunt destroy --auto-approve'
+alias ctga='rm -rf .terra*; terragrunt apply'
+tgdev() {
+  export TF_MODULE_ORG=beverts312
+  export TF_MODULE_REF=${1}
+}
 
 # javascript
 alias nrb='npm run build'
