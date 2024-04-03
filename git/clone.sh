@@ -6,7 +6,11 @@ if [ -z $ORG ] ; then
     ORG=$WORK_ORG
 fi
 
-git clone -o upstream git@github.com:$ORG/$REPO.git
+FULL_REPO=git@github.com:$ORG/$REPO.git
+
+gh repo fork $FULL_REPO
+
+git clone -o upstream $FULL_REPO
 cd $REPO
 git remote add me git@github.com:$GITHUB_USERNAME/$REPO.git
 git fetch me
