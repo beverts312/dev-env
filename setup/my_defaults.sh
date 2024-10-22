@@ -7,3 +7,4 @@ export DEV_HOME=$WORK_HOME
 export WORK_REGISTRY=dell.local:5000
 export BACKUP_BUCKET=b4llz-quick-back
 export BACKUP_ARGS="--endpoint-url=https://s3.wasabisys.com"
+export DEFAULT_REMOTE=origin

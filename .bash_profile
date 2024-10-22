@@ -13,7 +13,8 @@ alias dcl='docker-compose logs -f ${1}'
 alias dcc='docker-compose'
 alias d='docker'
 dsh() {
-  docker exec -it ${1} sh
+  exec_cmd=${2:-bash}
+  docker exec -it ${1} ${exec_cmd}
 }
 drf() {
   docker restart ${1} && docker logs -f ${1}
@@ -22,6 +23,12 @@ dbuild() {
   img_tag=${1:-latest}
   img_name=${PWD##*/}  
   docker build -t beverts312/${img_name}:${img_tag} .
+}
+dwb() {
+  img_tag=${1:-latest}
+  img_name=${PWD##*/}
+  docker build -t ${WORK_REGISTRY}/${img_name}:${img_tag} --platform linux/amd64 .
+  docker push ${WORK_REGISTRY}/${img_name}:${img_tag}
 }
 dwps() {
   orig_image=${1}
@@ -41,7 +48,7 @@ kns() {
   export HELM_NAMESPACE=${1}
 }
 # git
-alias gpr='git pull upstream ${1:-main} --rebase' # pull+rebase
+alias gpr='git pull ${DEFAULT_REMOTE} ${1:-main} --rebase'   # pull+rebase
 alias gco='git checkout -b ${1}'                  # create new branch
 alias guc='git reset --soft HEAD^'                # uncommit last commit
 alias grh='git reset --hard ${1}'                 # hard reset
@@ -56,6 +63,19 @@ alias gdl='git diff $(git rev-parse HEAD^1) $(git rev-parse HEAD)'
 alias clone="$DEV_ENV_HOME/git/clone.sh"
 alias gr='git rev-parse --show-toplevel'          # output top level path for repo
 alias cdr='cd $(gr)'                              # navigate to top level path of repo
+gaf() {
+  branch=${1}
+  git add .
+  git commit -n --amend --no-edit
+  git push ${DEFAULT_REMOTE} ${branch} --force
+}
+gqp() {
+  branch=${2}
+  msg=${3}
+  git add .
+  git commit -nm "${msg}"
+  git push ${DEFAULT_REMOTE} ${branch} --force
+}
 
 # python
 alias pinit="$DEV_ENV_HOME/misc/python_init.sh"
@@ -73,7 +93,6 @@ alias tgd='terragrunt destroy'
 alias tgdf='terragrunt destroy --auto-approve'
 alias ctga='rm -rf .terra*; terragrunt apply'
 tgdev() {
-  export TF_MODULE_ORG=beverts312
   export TF_MODULE_REF=${1}
 }
 
@@ -164,3 +183,7 @@ checkPidTraffic() {
 source $DEV_ENV_HOME/aws/aliases.sh
 source $DEV_ENV_HOME/azure/aliases.sh
 source $DEV_ENV_HOME/gcp/aliases.sh
+
+
+# macos
+alias flushdns='sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder'

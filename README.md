@@ -10,5 +10,6 @@ Define these variables in your bash profile:
 * `DEV_HOME` - top level directory for dev work
 * `DEV_ENV_HOME` - directory you cloned this to
 * `WORK_REGISTRY` - base url for your work's docker registry
+* `DEFAULT_REMOTE` - default git remote
 
 Add a `source $DEV_ENV_HOME/.bash_profile` to your bash profile.
