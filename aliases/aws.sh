@@ -1,4 +1,10 @@
 # aws
+awssso() {
+  aws sso login --sso-session my-sso --profile ${1}
+  export AWS_PROFILE=${1}
+}
+
+
 awsi() {
   aws ec2 describe-instances --output 'table' --query 'Reservations[].Instances[].[InstanceId,PrivateIpAddress,PublicIpAddress,State.Name,Tags[?Key==`Name`] | [0].Value]'
 }
