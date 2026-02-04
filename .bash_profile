@@ -56,3 +56,20 @@ checkPidTraffic() {
 alias flushdns='sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder'
 
 alias ag='agy-ide'
+ezgource() {
+  name=$(printf '%s\n' "${PWD##*/}")-$(date +%s).mp4
+  res=1920x1080
+  day_seconds=${1:-5}
+  gource -s ${day_seconds} -${res} -o - | ffmpeg -y -r 60 -f image2pipe -vcodec ppm -i - -vcodec libx264 -preset ultrafast -pix_fmt yuv420p -crf 1 -threads 0 -bf 0 ${name}
+}
+
+
+run_ci() {
+  branch_name=$(git symbolic-ref -q HEAD)
+  branch_name=${branch_name##refs/heads/}
+  branch_name=${branch_name:-HEAD}
+  # sha=$(git rev-parse HEAD)
+  gh workflow run ci.yml --ref ${branch_name}
+  # workflow_id=$(gh run ls --workflow=ci.yml -c ${sha} -L 1 | awk '{print $7}')
+  # gh run watch ${workflow_id}
+}

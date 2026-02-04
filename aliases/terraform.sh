@@ -11,3 +11,4 @@ alias ctga='rm -rf .terra*; terragrunt apply'
 tgdev() {
   export TF_MODULE_REF=${1}
 }
+alias tmd='terramate run --sync-drift-status --terraform-plan-file=drift.tfplan --terragrunt -- terragrunt plan -out drift.tfplan -detailed-exitcode -lock=false'
