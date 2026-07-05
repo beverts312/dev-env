@@ -1,7 +1,11 @@
 alias k='kubectl'
 alias kall="kubectl api-resources --verbs=list --namespaced -o name   | xargs -n 1 kubectl get --show-kind --ignore-not-found"
-alias dexlogs="kubectl logs -f -n argocd $(kubectl get pods -n argocd | grep dex-server | awk '{print $1}')"
-alias dexkill="kubectl delete pod $(kubectl get pods -n argocd | grep dex-server | awk '{print $1}') -n argocd"
+dexlogs() {
+  kubectl logs -f -n argocd $(kubectl get pods -n argocd | grep dex-server | awk '{print $1}')
+}
+dexkill() {
+  kubectl delete pod $(kubectl get pods -n argocd | grep dex-server | awk '{print $1}') -n argocd
+}
 
 
 kns() {

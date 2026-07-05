@@ -58,3 +58,5 @@ checkPidTraffic() {
 
 # macos
 alias flushdns='sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder'
+
+alias ag='agy-ide'
