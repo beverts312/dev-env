@@ -20,9 +20,6 @@ alias .4='cd ../../../../'                                                      
 alias .5='cd ../../../../../'                                                   # Go back 5 directory levels
 alias .6='cd ../../../../../../'                                                # Go back 6 directory levels
 alias ~='cd ~'                                                                  # Go Home
-alias dev="cd $DEV_HOME"
-alias work="cd $WORK_HOME"
-alias devenv="cd $DEV_ENV_HOME"
 
 # other
 alias ls='ls -G'                                                                # Colorize ls
@@ -50,7 +47,6 @@ h() {
 }
 
 # network
-alias scanwork="$DEV_ENV_HOME/scripts/avahi-scan.sh $WORK_WIFI_CIDR"
 
 checkPidTraffic() {
   sudo strace -p $1 -e trace=network -s 10000
