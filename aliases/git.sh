@@ -25,3 +25,7 @@ gqp() {
   git commit -nm "${msg}"
   git push ${DEFAULT_REMOTE} ${branch} --force
 }
+gauthor() {
+  git config --global user.email "${GIT_EMAIL}"
+  git config --global user.name "${GIT_NAME}"
+}

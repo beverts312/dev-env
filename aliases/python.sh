@@ -1,5 +1,9 @@
 alias v='source venv/bin/activate'
 
+pytestkill() {
+  ps aux | grep pytest | awk '{print $2}' | sed '$d' | xargs kill
+}
+
 function pinit() {
   echo "Initialize virtualenv"
   virtualenv venv

@@ -26,7 +26,13 @@ dbuild() {
 dwb() {
   img_tag=${1:-latest}
   img_name=${PWD##*/}
-  docker build -t ${WORK_REGISTRY}/${img_name}:${img_tag} --platform linux/amd64 .
+  if [ -n "$2" ]; then
+    stage_arg="--target ${2}"
+    img_name="${img_name}-${2}"
+  else
+    stage_arg=""
+  fi
+  docker build -t ${WORK_REGISTRY}/${img_name}:${img_tag} ${stage_arg} --platform linux/amd64  .
   docker push ${WORK_REGISTRY}/${img_name}:${img_tag}
 }
 dwps() {
