@@ -10,7 +10,6 @@ source $DEV_ENV_HOME/aliases/python.sh
 source $DEV_ENV_HOME/aliases/terraform.sh
 
 
-
 # navigation
 alias cd..='cd ../'                                                             # Go back 1 directory level (for fast typers)
 alias ..='cd ../'                                                               # Go back 1 directory level
@@ -33,9 +32,6 @@ alias newpass='openssl rand -base64 15'
 alias toBase64="python $DEV_ENV_HOME/scripts/to_base64.py"
 alias jsonToCsv="python $DEV_ENV_HOME/scripts/json_to_csv.py"
 alias mmux="tmux source-file $DEV_ENV_HOME/configs/tmux.conf"
-wssetup() {
-  python $DEV_ENV_HOME/scripts/workspace_setup.py $@
-}
 txt() {
   dig -t txt ${1}
 }

@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "be-cli"
+version = "0.1.0"
+description = "Personal workflow CLI"
+requires-python = ">=3.11"
+dependencies = ["click>=8.1", "tomli-w>=1.0"]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+be = "be.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/be"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
