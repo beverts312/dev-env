@@ -29,3 +29,6 @@ gauthor() {
   git config --global user.email "${GIT_EMAIL}"
   git config --global user.name "${GIT_NAME}"
 }
+wclone() {
+  git clone --recurse-submodules git@github.com:${WORK_ORG}/${1}.git ${2}
+}
