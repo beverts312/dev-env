@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -65,6 +66,23 @@ def new_workspace(cmux: str, args: list[str]) -> str:
     if created.returncode != 0:
         raise click.exceptions.Exit(created.returncode)
     return created.stdout
+
+
+def get_layout(cmux: str, name: str) -> dict:
+    """Return the layout tree saved by `cmux layout save`."""
+    result = subprocess.run(
+        [cmux, "layout", "get", name], capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        sys.stderr.write(result.stderr)
+        raise click.ClickException(f"no saved layout named {name}")
+    try:
+        layout = json.loads(result.stdout)["workspace"]["layout"]
+    except (json.JSONDecodeError, KeyError, TypeError):
+        raise click.ClickException(f"cmux returned an unreadable layout for {name}") from None
+    if not isinstance(layout, dict):
+        raise click.ClickException(f"cmux returned an unreadable layout for {name}")
+    return layout
 
 
 def workspace_ref(output: str) -> str | None:

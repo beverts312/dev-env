@@ -31,6 +31,7 @@ SETTINGS = {
         Setting("git.email", "GIT_EMAIL", "git user.email for `be git author`"),
         Setting("git.name", "GIT_NAME", "git user.name for `be git author`"),
         Setting("pr.dir", "PRS_DIR", "Parent directory for PR checkouts"),
+        Setting("ws.dir", "WS_DIR", "Parent directory for workspaces"),
         Setting("claude.model", "BE_CLAUDE_MODEL", "Model passed as claude --model", "claude-opus-5-5"),
         Setting("cmux.bin", "BE_CMUX_BIN", "Path to the cmux binary"),
     )

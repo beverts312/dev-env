@@ -25,7 +25,9 @@ python3 -m pip install -e './cli[test]'   # needs Python 3.11+
 | `be git author [--email] [--name] [--local]` | `gauthor` | Set `user.email` / `user.name` (global by default, `--local` for the current repo) |
 | `be pr review REPO NUMBER [--parent DIR]` | `scripts/pr_review.py` | Clone or reuse a checkout, then open a cmux workspace running `claude '/pr-review <slug> <number>'` |
 | `be pr clean [--parent DIR] [--dry-run] [-y]` | | Delete everything inside the PR directory, keeping the directory itself. It lists what it will remove and asks first. It refuses to run if no PR directory is configured, or if the directory is `/`, your home directory, or a parent of it. Symlinks are removed, not followed |
-| `be ws setup WORK_DIR [REPOS] [--extra-dirs] [--model]` | `scripts/workspace_setup.py` | Clone comma-separated `REPOS` into `WORK_DIR`, open a split cmux workspace with Claude, and save the layout |
+| `be ws create WORK_DIR [REPOS] [--dir DIR] [--extra-dirs] [--model]` | `scripts/workspace_setup.py` | Clone comma-separated `REPOS` into `WORK_DIR`, open a split cmux workspace with Claude, and save the layout. A relative `WORK_DIR` is created under `--dir` |
+| `be ws open NAME [--dir DIR] [--model MODEL]` | | Open the cmux layout that `ws create` saved for `NAME`, and start Claude in the main pane |
+| `be ws list [-i] [--dir DIR]` | | List workspace directories in `ws.dir` (alias: `be ws ls`). Needs `ws.dir` or `--dir`. `-i` moves through the list; enter opens the selected workspace |
 
 | `be config ...` | | Inspect and edit the config file (see below) |
 
@@ -52,6 +54,9 @@ name = "Bailey Everts"
 [pr]
 dir = "~/prs"
 
+[ws]
+dir = "~/workspaces"
+
 [claude]
 model = "claude-opus-5-5"
 
@@ -63,12 +68,13 @@ bin = "/Applications/cmux.app/Contents/Resources/bin/cmux"
 
 | Config key | Env var | Used by | Purpose | Default |
 |---|---|---|---|---|
-| `work_org` | `WORK_ORG` | `git clone`, `pr review`, `ws setup` (`--org`) | GitHub org for bare repo names | none; needed for bare names |
+| `work_org` | `WORK_ORG` | `git clone`, `pr review`, `ws create` (`--org`) | GitHub org for bare repo names | none; needed for bare names |
 | `git.email` | `GIT_EMAIL` | `git author` (`--email`) | Value for `git config user.email` | none; required |
 | `git.name` | `GIT_NAME` | `git author` (`--name`) | Value for `git config user.name` | none; required |
 | `pr.dir` | `PRS_DIR` | `pr review`, `pr clean` (`--parent`) | Parent directory for PR checkouts | current directory for `review`; `clean` requires it |
-| `claude.model` | `BE_CLAUDE_MODEL` | `ws setup` (`--model`) | Model passed as `claude --model` | `claude-opus-5-5` |
-| `cmux.bin` | `BE_CMUX_BIN` | `pr review`, `ws setup` | Path to the cmux binary | `cmux` on `PATH`, then `/Applications/cmux.app/Contents/Resources/bin/cmux` |
+| `ws.dir` | `WS_DIR` | `ws create`, `ws open`, `ws list` (`--dir`) | Parent directory for a relative workspace path. `list` requires it | current directory for `create` and `open`; `list` requires it |
+| `claude.model` | `BE_CLAUDE_MODEL` | `ws create`, `ws open` (`--model`) | Model passed as `claude --model` | `claude-opus-5-5` |
+| `cmux.bin` | `BE_CMUX_BIN` | `pr review`, `ws create`, `ws open`, `ws list -i` | Path to the cmux binary | `cmux` on `PATH`, then `/Applications/cmux.app/Contents/Resources/bin/cmux` |
 | – | `BE_CONFIG` | everything | Path to the config file | `~/.be/config` |
 
 ### `be config` commands
@@ -96,5 +102,5 @@ without changes.
 cd cli && python3 -m pytest
 ```
 
-`tests/test_layout.py` checks that `be ws setup` builds the same cmux layout
+`tests/test_layout.py` checks that `be ws create` builds the same cmux layout
 as `scripts/workspace_setup.py`.
