@@ -6,7 +6,7 @@ from click.testing import CliRunner
 
 from be import cmux
 from be.cli import cli
-from be.commands import ws
+from be.commands import pr, ws
 
 
 def test_help_shows_envvars():
@@ -44,6 +44,55 @@ def test_ws_open_starts_claude_in_main_pane(tmp_path, monkeypatch):
     assert claude["command"] == "claude --model claude-opus-5-5"
     assert claude["cwd"] == str(workspace.resolve())
     assert "command" not in payload["children"][1]["pane"]["surfaces"][0]
+
+
+def test_pr_review_opens_pr_in_browser_pane(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(pr, "clone_or_reuse", lambda slug, dest: None)
+    monkeypatch.setattr(cmux, "start", lambda: "cmux")
+    monkeypatch.setattr(cmux, "find_group", lambda binary, name: "workspace_group:1")
+    monkeypatch.setattr(cmux, "new_workspace", lambda binary, args: calls.append(args) or "")
+    result = CliRunner().invoke(
+        cli, ["pr", "review", "owner/repo", "42", "--parent", str(tmp_path)]
+    )
+    assert result.exit_code == 0, result.output
+    args = calls[0]
+    assert args[args.index("--name") + 1] == "pr-repo-42"
+    assert "--command" not in args
+    layout = json.loads(args[args.index("--layout") + 1])
+    claude, browser = (child["pane"]["surfaces"][0] for child in layout["children"])
+    assert claude["command"] == "claude '/pr-review owner/repo 42'"
+    assert claude["cwd"] == str((tmp_path / "repo").resolve())
+    assert browser == {"type": "browser", "name": "pr", "url": "https://github.com/owner/repo/pull/42"}
+
+
+def test_pr_review_joins_existing_prs_group(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(pr, "clone_or_reuse", lambda slug, dest: None)
+    monkeypatch.setattr(cmux, "start", lambda: "cmux")
+    monkeypatch.setattr(
+        cmux, "find_group", lambda binary, name: "workspace_group:7" if name == "prs" else None
+    )
+    monkeypatch.setattr(cmux, "new_workspace", lambda binary, args: calls.append(args) or "OK workspace:3")
+    monkeypatch.setattr(
+        cmux, "create_group", lambda *a: (_ for _ in ()).throw(AssertionError("should not create"))
+    )
+    result = CliRunner().invoke(cli, ["pr", "review", "owner/repo", "42", "--parent", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert calls[0][calls[0].index("--group") + 1] == "workspace_group:7"
+
+
+def test_pr_review_creates_prs_group_anchored_on_workspace(tmp_path, monkeypatch):
+    calls, created = [], []
+    monkeypatch.setattr(pr, "clone_or_reuse", lambda slug, dest: None)
+    monkeypatch.setattr(cmux, "start", lambda: "cmux")
+    monkeypatch.setattr(cmux, "find_group", lambda binary, name: None)
+    monkeypatch.setattr(cmux, "new_workspace", lambda binary, args: calls.append(args) or "OK workspace:3")
+    monkeypatch.setattr(cmux, "create_group", lambda *a: created.append(a))
+    result = CliRunner().invoke(cli, ["pr", "review", "owner/repo", "42", "--parent", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert "--group" not in calls[0]
+    assert created == [("cmux", "prs", "workspace:3")]
 
 
 def test_ws_open_missing_directory(tmp_path, monkeypatch):
@@ -166,3 +215,9 @@ def test_clone_without_org_errors():
     result = CliRunner().invoke(cli, ["git", "clone", "repo"], env={"WORK_ORG": None})
     assert result.exit_code == 2
     assert "WORK_ORG" in result.output
+
+
+def test_pr_r_is_review_alias():
+    result = CliRunner().invoke(cli, ["pr", "r", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "/pr-review" in result.output

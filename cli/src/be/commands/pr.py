@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shlex
 import shutil
 from pathlib import Path
@@ -11,10 +12,36 @@ import click
 from be import cmux, config
 from be.github import clone_or_reuse, repo_slug
 
+PR_GROUP = "prs"
+
 
 @click.group()
 def pr() -> None:
     """Pull request helpers."""
+
+
+def review_layout(dest: Path, prompt: str, url: str) -> dict:
+    """Claude on the left, the pull request in a browser pane on the right."""
+    return {
+        "direction": "horizontal",
+        "split": 0.5,
+        "children": [
+            {
+                "pane": {
+                    "surfaces": [
+                        {
+                            "type": "terminal",
+                            "name": "claude",
+                            "cwd": str(dest),
+                            "command": "claude " + shlex.quote(prompt),
+                            "focus": True,
+                        }
+                    ]
+                }
+            },
+            {"pane": {"surfaces": [{"type": "browser", "name": "pr", "url": url}]}},
+        ],
+    }
 
 
 @pr.command()
@@ -27,7 +54,10 @@ def pr() -> None:
 )
 @config.option("work_org", "--org", help="GitHub org used when REPO has no owner.")
 def review(repo: str, number: int, parent: str | None, org: str | None) -> None:
-    """Clone REPO and open Claude in cmux to run /pr-review on PR NUMBER."""
+    """Clone REPO and open cmux with Claude running /pr-review and the PR in a browser pane.
+
+    The workspace goes in the `prs` workspace group, created on first use.
+    """
     slug = repo_slug(repo, org)
     root = Path(parent or ".").expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -37,19 +67,31 @@ def review(repo: str, number: int, parent: str | None, org: str | None) -> None:
 
     binary = cmux.start()
     prompt = f"/pr-review {slug} {number}"
-    cmux.new_workspace(
-        binary,
-        [
-            "--name",
-            f"pr-{short}-{number}",
-            "--cwd",
-            str(dest),
-            "--command",
-            "claude " + shlex.quote(prompt),
-            "--focus",
-            "true",
-        ],
-    )
+    group = cmux.find_group(binary, PR_GROUP)
+    args = [
+        "--name",
+        f"pr-{short}-{number}",
+        "--cwd",
+        str(dest),
+        "--focus",
+        "true",
+        "--layout",
+        json.dumps(review_layout(dest, prompt, f"https://github.com/{slug}/pull/{number}")),
+    ]
+    if group:
+        args += ["--group", group]
+    output = cmux.new_workspace(binary, args)
+    if group:
+        return
+    # no group yet: anchor a new one on this workspace instead of an empty generated one
+    ref = cmux.workspace_ref(output)
+    if ref is None:
+        click.echo(f"warning: could not find the new workspace; not adding it to {PR_GROUP}", err=True)
+        return
+    cmux.create_group(binary, PR_GROUP, ref)
+
+
+pr.add_command(review, name="r")
 
 
 def guard_clean_target(parent: str | None) -> Path:

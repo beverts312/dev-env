@@ -68,6 +68,36 @@ def new_workspace(cmux: str, args: list[str]) -> str:
     return created.stdout
 
 
+def find_group(cmux: str, name: str) -> str | None:
+    """Return the ref of the workspace group called name, if there is one."""
+    result = subprocess.run(
+        [cmux, "workspace-group", "list", "--json"], capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        sys.stderr.write(result.stderr)
+        raise click.ClickException("could not list cmux workspace groups")
+    try:
+        groups = json.loads(result.stdout)["groups"]
+    except (json.JSONDecodeError, KeyError, TypeError):
+        raise click.ClickException("cmux returned unreadable workspace groups") from None
+    for group in groups:
+        if group.get("name") == name:
+            return group.get("ref")
+    return None
+
+
+def create_group(cmux: str, name: str, workspace: str) -> None:
+    """Create a workspace group called name, anchored on workspace."""
+    result = subprocess.run(
+        [cmux, "workspace-group", "create", "--name", name, "--from", workspace],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        sys.stderr.write(result.stderr)
+        raise click.ClickException(f"could not create cmux workspace group {name}")
+
+
 def get_layout(cmux: str, name: str) -> dict:
     """Return the layout tree saved by `cmux layout save`."""
     result = subprocess.run(

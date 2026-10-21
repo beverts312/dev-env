@@ -23,7 +23,7 @@ python3 -m pip install -e './cli[test]'   # needs Python 3.11+
 |---|---|---|
 | `be git clone REPO [DEST]` | `wclone` | Clone `REPO` (bare name under `WORK_ORG`, or `owner/repo`) with submodules |
 | `be git author [--email] [--name] [--local]` | `gauthor` | Set `user.email` / `user.name` (global by default, `--local` for the current repo) |
-| `be pr review REPO NUMBER [--parent DIR]` | `scripts/pr_review.py` | Clone or reuse a checkout, then open a cmux workspace running `claude '/pr-review <slug> <number>'` |
+| `be pr review REPO NUMBER [--parent DIR]` | `scripts/pr_review.py` | Clone or reuse a checkout (alias: `be pr r`), then open a cmux workspace running `claude '/pr-review <slug> <number>'`, with the pull request open in a browser pane beside it. The workspace goes in the `prs` workspace group, which is created on first use |
 | `be pr clean [--parent DIR] [--dry-run] [-y]` | | Delete everything inside the PR directory, keeping the directory itself. It lists what it will remove and asks first. It refuses to run if no PR directory is configured, or if the directory is `/`, your home directory, or a parent of it. Symlinks are removed, not followed |
 | `be ws create WORK_DIR [REPOS] [--dir DIR] [--extra-dirs] [--model]` | `scripts/workspace_setup.py` | Clone comma-separated `REPOS` into `WORK_DIR`, open a split cmux workspace with Claude, and save the layout. A relative `WORK_DIR` is created under `--dir` |
 | `be ws open NAME [--dir DIR] [--model MODEL]` | | Open the cmux layout that `ws create` saved for `NAME`, and start Claude in the main pane |
