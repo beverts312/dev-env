@@ -4,8 +4,9 @@ Personal workflow CLI built on [Click](https://click.palletsprojects.com/).
 It wraps the `wclone`/`gauthor` shell functions in `aliases/git.sh`,
 `scripts/pr_review.py`, and `scripts/workspace_setup.py`. Those originals are
 left as they are. `be backup` replaces `backup_util.py`, `be convert` replaces
-`scripts/json_to_csv.py` and `scripts/to_base64.py`, and `be dns` replaces
-`scripts/r53_to_cf.py`; those have been removed.
+`scripts/json_to_csv.py` and `scripts/to_base64.py`, `be dns` replaces
+`scripts/r53_to_cf.py`, and `be compare` replaces `scripts/compare_dirs.py`;
+those have been removed.
 
 ## Install
 
@@ -67,6 +68,12 @@ S3 uses the standard AWS credential chain. `upload` and `download` need the
 | `be backup gen-key [--config PATH] [--key-path PATH] [--force]` | Write a Fernet key (mode 600) to `--key-path` or the config's `key_path` |
 | `be backup upload [--config PATH] [--dry-run]` | Archive `source_dir` as tar.gz (skipping the `ignore` globs, the config, and the key), encrypt it, and upload it to `storage_uri`. `--dry-run` lists the files instead |
 | `be backup download [--config PATH] [--dest DIR]` | Download, decrypt, and extract the archive into `--dest` (default: current directory) |
+
+### `be compare`
+
+| Command | Replaces | What it does |
+|---|---|---|
+| `be compare dirs SOURCE TARGET [-m]` | `scripts/compare_dirs.py` | List files in `TARGET` that aren't in `SOURCE`, by path relative to each root; `-m` lists files in both instead. `SOURCE` and `TARGET` fall back to the `SOURCE` and `TARGET` env vars. The list goes to stdout and progress to stderr, so it pipes cleanly |
 
 ### `be convert`
 
