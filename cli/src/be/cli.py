@@ -6,6 +6,7 @@ import click
 
 from be.commands.backup import backup
 from be.commands.config import config_group
+from be.commands.convert import convert
 from be.commands.git import git
 from be.commands.pr import pr
 from be.commands.ws import ws
@@ -18,6 +19,7 @@ def cli() -> None:
 
 cli.add_command(backup)
 cli.add_command(config_group)
+cli.add_command(convert)
 cli.add_command(git)
 cli.add_command(pr)
 cli.add_command(ws)

@@ -29,9 +29,8 @@ alias c='clear'                                                                 
 alias nyan='docker run -it --rm supertest2014/nyan'                             # Show nyancat
 alias devserv='python -m http.server -b 127.0.0.1 8000'
 alias newpass='openssl rand -base64 15'
-alias toBase64="python $DEV_ENV_HOME/scripts/to_base64.py"
-alias jsonToCsv="python $DEV_ENV_HOME/scripts/json_to_csv.py"
-alias mmux="tmux source-file $DEV_ENV_HOME/configs/tmux.conf"
+alias toBase64="be convert base64"
+alias jsonToCsv="be convert json-csv"
 txt() {
   dig -t txt ${1}
 }

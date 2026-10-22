@@ -3,7 +3,8 @@
 Personal workflow CLI built on [Click](https://click.palletsprojects.com/).
 It wraps the `wclone`/`gauthor` shell functions in `aliases/git.sh`,
 `scripts/pr_review.py`, and `scripts/workspace_setup.py`. Those originals are
-left as they are. `be backup` replaces `backup_util.py`, which has been removed.
+left as they are. `be backup` replaces `backup_util.py`, and `be convert`
+replaces `scripts/json_to_csv.py` and `scripts/to_base64.py`; those have been removed.
 
 ## Install
 
@@ -61,6 +62,13 @@ S3 uses the standard AWS credential chain. `upload` and `download` need the
 | `be backup gen-key [--config PATH] [--key-path PATH] [--force]` | Write a Fernet key (mode 600) to `--key-path` or the config's `key_path` |
 | `be backup upload [--config PATH] [--dry-run]` | Archive `source_dir` as tar.gz (skipping the `ignore` globs, the config, and the key), encrypt it, and upload it to `storage_uri`. `--dry-run` lists the files instead |
 | `be backup download [--config PATH] [--dest DIR]` | Download, decrypt, and extract the archive into `--dest` (default: current directory) |
+
+### `be convert`
+
+| Command | Replaces | What it does |
+|---|---|---|
+| `be convert json-csv SRC [-o OUTPUT]` | `scripts/json_to_csv.py` | Convert a JSON array of objects to CSV with a header row. Columns are the union of every object's keys, and values are quoted as needed. Writes `SRC` with a `.csv` suffix by default; `-o -` writes to stdout |
+| `be convert base64 SRC [-d]` | `scripts/to_base64.py` | Print `SRC` (a file, or `-` for stdin) base64-encoded; `-d` decodes instead |
 
 ### `be config`
 
