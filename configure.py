@@ -108,6 +108,42 @@ def configure_git(name: str, email: str) -> None:
     print(f"Set global git user.email to {email!r}")
 
 
+def install_cli(dev_env_home: Path) -> Path | None:
+    """Install the `be` CLI as an editable uv tool; return its path."""
+    if not which("uv"):
+        print(
+            "uv not found; skipping be CLI install. Install uv, then run:\n"
+            f"  uv tool install --editable {dev_env_home / 'cli'}",
+            file=sys.stderr,
+        )
+        return None
+
+    subprocess.run(
+        ["uv", "tool", "install", "--force", "--editable", str(dev_env_home / "cli")],
+        check=True,
+    )
+    bin_dir = subprocess.run(
+        ["uv", "tool", "dir", "--bin"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    be = Path(bin_dir) / "be"
+    print(f"Installed be CLI to {be}")
+    if not which("be"):
+        print(f"{bin_dir} is not on PATH; run `uv tool update-shell` to add it.")
+    return be
+
+
+def configure_cli(be: Path, values: dict[str, str | None]) -> None:
+    """Write each non-empty value to the be config file via `be config set`."""
+    for key, value in values.items():
+        if value is None:
+            continue
+        subprocess.run([str(be), "config", "set", key, value], check=True)
+        print(f"Set be config {key} to {value!r}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Configure your machine for use with this dev-env repository.",
@@ -146,6 +182,16 @@ def parse_args() -> argparse.Namespace:
         default="texas312@gmail.com",
         help="Global git user.email (default: texas312@gmail.com)",
     )
+    parser.add_argument(
+        "--skip-cli",
+        action="store_true",
+        help="Do not install or configure the be CLI",
+    )
+    parser.add_argument("--work-org", help="be config work_org")
+    parser.add_argument("--pr-dir", help="be config pr.dir")
+    parser.add_argument("--ws-dir", help="be config ws.dir")
+    parser.add_argument("--claude-model", help="be config claude.model")
+    parser.add_argument("--cmux-bin", help="be config cmux.bin")
     return parser.parse_args()
 
 
@@ -165,6 +211,22 @@ def main() -> None:
     )
     update_shell_config(shell_config, benvrc_path)
     configure_git(args.git_name, args.git_email)
+
+    if not args.skip_cli:
+        be = install_cli(dev_env_home)
+        if be:
+            configure_cli(
+                be,
+                {
+                    "git.name": args.git_name,
+                    "git.email": args.git_email,
+                    "work_org": args.work_org,
+                    "pr.dir": args.pr_dir,
+                    "ws.dir": args.ws_dir,
+                    "claude.model": args.claude_model,
+                    "cmux.bin": args.cmux_bin,
+                },
+            )
 
     print(f"Wrote {benvrc_path}")
     print(f"Updated {shell_config}")
