@@ -51,7 +51,7 @@ checkPidTraffic() {
 }
 
 # macos
-alias flushdns='sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder'
+alias flushdns='be dns flush-local'
 
 alias ag='agy-ide'
 ezgource() {

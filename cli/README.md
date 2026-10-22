@@ -3,8 +3,9 @@
 Personal workflow CLI built on [Click](https://click.palletsprojects.com/).
 It wraps the `wclone`/`gauthor` shell functions in `aliases/git.sh`,
 `scripts/pr_review.py`, and `scripts/workspace_setup.py`. Those originals are
-left as they are. `be backup` replaces `backup_util.py`, and `be convert`
-replaces `scripts/json_to_csv.py` and `scripts/to_base64.py`; those have been removed.
+left as they are. `be backup` replaces `backup_util.py`, `be convert` replaces
+`scripts/json_to_csv.py` and `scripts/to_base64.py`, and `be dns` replaces
+`scripts/r53_to_cf.py`; those have been removed.
 
 ## Install
 
@@ -18,8 +19,12 @@ Or into a virtualenv:
 python3 -m pip install -e './cli[test]'   # needs Python 3.11+
 ```
 
-`be backup upload` and `download` also need the `backup` extra for the GCS
-and S3 clients: `uv tool install --editable './cli[backup]'`.
+Some commands need an extra for their cloud clients:
+
+- `be backup upload` and `download`: `uv tool install --editable './cli[backup]'`
+- `be dns r53-cf`: `uv tool install --editable './cli[dns]'`
+
+Combine them as `'./cli[backup,dns]'`.
 
 ## Commands
 
@@ -70,6 +75,16 @@ S3 uses the standard AWS credential chain. `upload` and `download` need the
 | `be convert json-csv SRC [-o OUTPUT]` | `scripts/json_to_csv.py` | Convert a JSON array of objects to CSV with a header row. Columns are the union of every object's keys, and values are quoted as needed. Writes `SRC` with a `.csv` suffix by default; `-o -` writes to stdout |
 | `be convert base64 SRC [-d]` | `scripts/to_base64.py` | Print `SRC` (a file, or `-` for stdin) base64-encoded; `-d` decodes instead |
 
+### `be dns`
+
+| Command | Replaces | What it does |
+|---|---|---|
+| `be dns r53-cf DOMAIN [--dry-run] [--skip-nameserver-update] [--hosted-zone-id ID] [--account-id ID]` | `scripts/r53_to_cf.py` | Migrate `DOMAIN` from Route53 to Cloudflare: create the Cloudflare zone if needed, copy the Route53 records into it (skipping NS, SOA, and records Cloudflare already has), then point the Route53 Domains registration at Cloudflare's nameservers. Aliases become CNAMEs, except `dualstack.` and `s3-website` targets, which are skipped for manual review. `--dry-run` creates and changes nothing, not even the zone |
+| `be dns flush-local` | | Flush the local DNS cache with `sudo dscacheutil -flushcache` and `sudo killall -HUP mDNSResponder`. macOS only; errors on other systems |
+
+`r53-cf` needs `CLOUDFLARE_API_TOKEN` with Zone > DNS Read and Edit. AWS uses
+the standard credential chain. It also needs the `dns` extra (see [Install](#install)).
+
 ### `be config`
 
 Inspect and edit the config file. See [`be config` commands](#be-config-commands).
@@ -116,6 +131,7 @@ bin = "/Applications/cmux.app/Contents/Resources/bin/cmux"
 | `ws.dir` | `WS_DIR` | `ws create`, `ws open`, `ws get`, `ws list` (`--dir`) | Parent directory for a relative workspace path. `list` requires it | current directory for `create`, `open`, and `get`; `list` requires it |
 | `claude.model` | `BE_CLAUDE_MODEL` | `ws create`, `ws open` (`--model`) | Model passed as `claude --model` | `claude-opus-5-5` |
 | `cmux.bin` | `BE_CMUX_BIN` | `pr review`, `ws create`, `ws open`, `ws list -i` | Path to the cmux binary | `cmux` on `PATH`, then `/Applications/cmux.app/Contents/Resources/bin/cmux` |
+| `cloudflare.account_id` | `CLOUDFLARE_ACCOUNT_ID` | `dns r53-cf` (`--account-id`) | Cloudflare account that new zones are created in | none; Cloudflare picks the token's account |
 | – | `BE_CONFIG` | everything | Path to the config file | `~/.be/config` |
 
 ### `be config` commands
