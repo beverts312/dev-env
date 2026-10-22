@@ -2,7 +2,7 @@
 
 A directory is archived as tar.gz, encrypted with a local Fernet key, and
 uploaded to storage_uri (gs://bucket/object or s3://bucket/object). Auth uses
-ADC for GCS and the standard AWS credential chain for S3.
+Application Default Credentials for GCS and the standard AWS credential chain for S3.
 """
 
 from __future__ import annotations
@@ -60,7 +60,9 @@ def resolve_source_dir(data: dict) -> Path:
 def resolve_storage_uri(data: dict) -> str:
     uri = data.get("storage_uri")
     if not uri or not isinstance(uri, str):
-        raise click.ClickException("storage_uri is required in config (gs://... or s3://...)")
+        raise click.ClickException(
+            "storage_uri is required in config (gs://... or s3://...)"
+        )
     return uri.strip()
 
 
@@ -113,7 +115,9 @@ def is_ignored(rel_path: str, patterns: Sequence[str], *, is_dir: bool = False) 
     return False
 
 
-def collect_files(source_dir: Path, ignore: Sequence[str], extra_ignore: Iterable[Path]) -> list[Path]:
+def collect_files(
+    source_dir: Path, ignore: Sequence[str], extra_ignore: Iterable[Path]
+) -> list[Path]:
     """Return file paths relative to source_dir that should be archived."""
     patterns = list(ignore)
     for extra in extra_ignore:
@@ -157,7 +161,9 @@ def load_fernet(key_path: Path) -> Fernet:
 
 def gen_key(key_path: Path, force: bool) -> None:
     if key_path.exists() and not force:
-        raise click.ClickException(f"key already exists: {key_path} (use --force to overwrite)")
+        raise click.ClickException(
+            f"key already exists: {key_path} (use --force to overwrite)"
+        )
     key_path.parent.mkdir(parents=True, exist_ok=True)
     key_path.write_bytes(Fernet.generate_key())
     key_path.chmod(0o600)
@@ -178,7 +184,9 @@ def decrypt_file(fernet: Fernet, src: Path, dest: Path) -> None:
     try:
         dest.write_bytes(fernet.decrypt(src.read_bytes()))
     except InvalidToken:
-        raise click.ClickException("decryption failed: invalid key or corrupt ciphertext") from None
+        raise click.ClickException(
+            "decryption failed: invalid key or corrupt ciphertext"
+        ) from None
 
 
 def extract_archive(archive_path: Path, dest_dir: Path) -> None:
@@ -198,11 +206,15 @@ def parse_storage_uri(uri: str) -> tuple[str, str, str]:
     parsed = urlparse(uri)
     scheme = parsed.scheme.lower()
     if scheme not in {"gs", "s3"}:
-        raise click.BadParameter(f"unsupported storage_uri scheme (use gs:// or s3://): {uri}")
+        raise click.BadParameter(
+            f"unsupported storage_uri scheme (use gs:// or s3://): {uri}"
+        )
     bucket = parsed.netloc
     key = parsed.path.lstrip("/")
     if not bucket or not key:
-        raise click.BadParameter(f"storage_uri must be scheme://bucket/object-path: {uri}")
+        raise click.BadParameter(
+            f"storage_uri must be scheme://bucket/object-path: {uri}"
+        )
     return scheme, bucket, key
 
 

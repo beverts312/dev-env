@@ -16,7 +16,7 @@ from pathlib import Path
 import click
 import yaml
 
-from be import cmux, config
+from be import cmux, config, jira
 from be.github import clone, repo_slug
 
 
@@ -103,6 +103,8 @@ def selection_action(index: int, count: int, key: str) -> tuple[int, str]:
         return index, "delete"
     if key in ("g", "G"):
         return index, "get"
+    if key in ("j", "J"):
+        return index, "jira"
     if key == "\x03":
         return index, "abort"
     if key == "up":
@@ -131,14 +133,14 @@ def paint_list(names: list[str], index: int, *, redraw: bool) -> None:
     for i, name in enumerate(names):
         mark = ">" if i == index else " "
         sys.stdout.write(f"\x1b[2K{mark} {name}\r\n")
-    sys.stdout.write("\x1b[2Kenter open, g get, d delete, q quit\r\n")
+    sys.stdout.write("\x1b[2Kenter open, g get, j refresh Jira, d delete, q quit\r\n")
     sys.stdout.flush()
 
 
 def choose(names: list[str], index: int = 0) -> tuple[str, int] | None:
     """Let the user move through names, starting at index.
 
-    Returns (action, index) for open, get or delete, or None on quit.
+    Returns (action, index) for open, get, jira or delete, or None on quit.
     """
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise click.ClickException("-i needs a terminal")
@@ -152,7 +154,7 @@ def choose(names: list[str], index: int = 0) -> tuple[str, int] | None:
         painted = True
         while True:
             index, action = selection_action(index, len(names), read_key(fd))
-            if action in ("open", "get", "delete"):
+            if action in ("open", "get", "jira", "delete"):
                 return action, index
             if action == "quit":
                 return None
@@ -212,7 +214,7 @@ def open_root(root: Path, model: str | None = None) -> None:
         binary,
         [
             "--name",
-            root.name,
+            read_manifest(root).get("issue_name") or root.name,
             "--cwd",
             str(root),
             "--focus",
@@ -226,31 +228,73 @@ def open_root(root: Path, model: str | None = None) -> None:
 MANIFEST = "workspace.yml"
 
 
-def write_manifest(root: Path, description: str, extra_dirs: list[Path]) -> Path:
+def write_manifest(
+    root: Path, description: str, extra_dirs: list[Path], issue_name: str | None = None
+) -> Path:
     manifest = {
         "name": root.name,
         "description": description,
         "extra_dirs": [str(directory) for directory in extra_dirs],
     }
+    if issue_name:
+        manifest["issue_name"] = issue_name
     path = root / MANIFEST
     path.write_text(yaml.safe_dump(manifest, sort_keys=False))
     return path
 
 
-def workspace_details(root: Path) -> dict:
-    """Read the manifest and find the repo checkouts directly under root."""
+def read_manifest(root: Path) -> dict:
     path = root / MANIFEST
     manifest = yaml.safe_load(path.read_text()) if path.is_file() else None
-    manifest = manifest if isinstance(manifest, dict) else {}
+    return manifest if isinstance(manifest, dict) else {}
+
+
+def workspace_details(root: Path) -> dict:
+    """Read the manifest and find the repo checkouts directly under root."""
+    manifest = read_manifest(root)
     repos = sorted(
         entry.name for entry in root.iterdir() if entry.is_dir() and (entry / ".git").exists()
     )
-    return {
+    details = {
         "name": manifest.get("name") or root.name,
         "description": manifest.get("description") or "",
         "repos": repos,
         "extra_dirs": manifest.get("extra_dirs") or [],
     }
+    if manifest.get("issue_name"):
+        details["issue_name"] = manifest["issue_name"]
+    return details
+
+
+def issue_key(name: str) -> str | None:
+    projects, _ = config.resolve("jira.projects")
+    return jira.issue_key(name, projects or {})
+
+
+def fetch_issue_name(name: str) -> str | None:
+    """The Jira summary for a name that starts with a configured project key."""
+    key = issue_key(name)
+    if not key:
+        return None
+    try:
+        return jira.issue_summary(key)
+    except jira.JiraError as e:
+        click.echo(f"could not fetch Jira issue {key}: {e}; continuing", err=True)
+        return None
+
+
+def refresh_issue_name(root: Path) -> None:
+    """Look up root's Jira issue again and save its summary in the manifest."""
+    if not issue_key(root.name):
+        click.echo(f"{root.name} does not start with a key in jira.projects", err=True)
+        return
+    issue_name = fetch_issue_name(root.name)
+    if not issue_name:
+        return
+    manifest = read_manifest(root) or {"name": root.name, "description": "", "extra_dirs": []}
+    manifest["issue_name"] = issue_name
+    (root / MANIFEST).write_text(yaml.safe_dump(manifest, sort_keys=False))
+    click.echo(f"{root.name}: {issue_name}")
 
 
 def show_workspace(root: Path) -> None:
@@ -334,7 +378,8 @@ def create(
 
     root = workspace_root(work_dir, parent)
     root.mkdir(parents=True, exist_ok=True)
-    write_manifest(root, description, dirs)
+    issue_name = fetch_issue_name(root.name)
+    write_manifest(root, description, dirs, issue_name)
     os.chdir(root)
 
     for repo in repo_names:
@@ -344,7 +389,7 @@ def create(
     checkouts = [repo.rsplit("/", 1)[-1] for repo in repo_names]
 
     binary = cmux.start()
-    args = ["--name", root.name, "--cwd", str(root), "--focus", "true"]
+    args = ["--name", issue_name or root.name, "--cwd", str(root), "--focus", "true"]
     if repo_names or dirs:
         args += ["--layout", json.dumps(build_layout(root, checkouts, dirs, model))]
     else:
@@ -419,6 +464,9 @@ def list_workspaces(parent: str | None, interactive: bool) -> None:
             return
         if action == "get":
             show_workspace(entries[index])
+            continue
+        if action == "jira":
+            refresh_issue_name(entries[index])
             continue
         name = entries[index].name
         try:

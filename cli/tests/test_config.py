@@ -16,7 +16,9 @@ def run(*args, env=None):
 
 def capture_clone(monkeypatch):
     calls = []
-    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: calls.append(cmd) or Done())
+    monkeypatch.setattr(
+        subprocess, "run", lambda cmd, **kw: calls.append(cmd) or Done()
+    )
     return calls
 
 
@@ -40,7 +42,9 @@ def test_precedence_flag_env_file(isolated_config, monkeypatch):
 
 def test_set_get_unset(isolated_config):
     assert run("config", "set", "git.email", "me@example.com").exit_code == 0
-    assert tomllib.loads(isolated_config.read_text()) == {"git": {"email": "me@example.com"}}
+    assert tomllib.loads(isolated_config.read_text()) == {
+        "git": {"email": "me@example.com"}
+    }
     got = run("config", "get", "git.email", "--source")
     assert got.output.strip() == "me@example.com\tfile"
     assert run("config", "unset", "git.email").exit_code == 0
@@ -95,3 +99,49 @@ def test_invalid_file_is_clean_error(isolated_config):
 
 def test_help_mentions_config_key():
     assert "[config: work_org]" in run("git", "clone", "--help").output
+
+
+def test_map_entries(isolated_config):
+    assert run("config", "set", "jira.projects.ACME", "Acme").exit_code == 0
+    assert run("config", "set", "jira.projects.OPS", "Operations").exit_code == 0
+    assert tomllib.loads(isolated_config.read_text()) == {
+        "jira": {"projects": {"ACME": "Acme", "OPS": "Operations"}}
+    }
+    assert run("config", "get", "jira.projects.ACME").output == "Acme\n"
+    assert (
+        run("config", "get", "jira.projects").output
+        == "ACME\tAcme\nOPS\tOperations\n"
+    )
+    out = run("config", "list").output
+    assert "jira.projects.OPS" in out
+    assert run("config", "unset", "jira.projects.ACME").exit_code == 0
+    assert run("config", "unset", "jira.projects.OPS").exit_code == 0
+    assert tomllib.loads(isolated_config.read_text()) == {}
+    assert run("config", "get", "jira.projects").exit_code == 1
+
+
+def test_map_rejects_bare_set_and_unknown_parent():
+    assert run("config", "set", "jira.projects", "x").exit_code == 2
+    assert run("config", "set", "jira.url.x", "y").exit_code == 2
+
+
+def test_map_env_json(isolated_config):
+    env = {"JIRA_PROJECTS": '{"ACME": "Acme"}'}
+    got = run("config", "get", "jira.projects.ACME", "--source", env=env)
+    assert got.output == "Acme\tenv:JIRA_PROJECTS\n"
+    assert run("config", "init", env=env).exit_code == 0
+    assert tomllib.loads(isolated_config.read_text())["jira"]["projects"] == {
+        "ACME": "Acme"
+    }
+    bad = run("config", "get", "jira.projects", env={"JIRA_PROJECTS": "nope"})
+    assert bad.exit_code == 1
+    assert "invalid JSON" in bad.output
+
+
+def test_list_masks_secrets_and_init_is_private(isolated_config):
+    run("config", "set", "jira.token", "hunter2")
+    assert "hunter2" not in run("config", "list").output
+    assert run("config", "get", "jira.token").output == "hunter2\n"
+    isolated_config.unlink()
+    assert run("config", "init").exit_code == 0
+    assert isolated_config.stat().st_mode & 0o777 == 0o600

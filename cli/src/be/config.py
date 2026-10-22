@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import tomllib
@@ -22,6 +23,10 @@ class Setting:
     env: str
     help: str
     default: str | None = None
+    # "map" is a table of strings: set entries as <key>.<name>, env var is JSON
+    kind: str = "str"
+    # masked in `be config list`
+    secret: bool = False
 
 
 SETTINGS = {
@@ -35,16 +40,23 @@ SETTINGS = {
         Setting("claude.model", "BE_CLAUDE_MODEL", "Model passed as claude --model", "claude-opus-5-5"),
         Setting("cmux.bin", "BE_CMUX_BIN", "Path to the cmux binary"),
         Setting("cloudflare.account_id", "CLOUDFLARE_ACCOUNT_ID", "Cloudflare account for new zones"),
+        Setting("jira.url", "JIRA_URL", "Base URL of the Jira site"),
+        Setting("jira.email", "JIRA_EMAIL", "Atlassian account email for the Jira API"),
+        Setting("jira.token", "JIRA_API_TOKEN", "Atlassian API token for the Jira API", secret=True),
+        Setting("jira.projects", "JIRA_PROJECTS", "Jira project keys and their descriptions", kind="map"),
     )
 }
 
 
 def setting(key: str) -> Setting:
-    try:
-        return SETTINGS[key]
-    except KeyError:
-        valid = ", ".join(SETTINGS)
-        raise click.BadParameter(f"unknown key {key!r}; valid keys: {valid}") from None
+    """The setting for KEY, or for the map setting KEY is an entry of."""
+    s = SETTINGS.get(key)
+    if s is None:
+        s = SETTINGS.get(key.rpartition(".")[0])
+        if s is None or s.kind != "map":
+            valid = ", ".join(f"{k}.<name>" if v.kind == "map" else k for k, v in SETTINGS.items())
+            raise click.BadParameter(f"unknown key {key!r}; valid keys: {valid}")
+    return s
 
 
 def config_path() -> Path:
@@ -84,17 +96,33 @@ def file_value(key: str, data: dict[str, Any] | None = None) -> Any:
     return node
 
 
+def env_value(s: Setting) -> Any:
+    raw = os.environ[s.env]
+    if s.kind != "map":
+        return raw
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise click.ClickException(f"invalid JSON in {s.env}: {e}") from None
+
+
 def resolve(key: str) -> tuple[Any, str]:
     """Return (value, source) where source is env:<VAR>, file, default or unset."""
     s = setting(key)
     if os.environ.get(s.env):
-        return os.environ[s.env], f"env:{s.env}"
-    value = file_value(key)
-    if value is not None:
-        return value, "file"
-    if s.default is not None:
-        return s.default, "default"
-    return None, "unset"
+        value, source = env_value(s), f"env:{s.env}"
+    else:
+        value, source = file_value(s.key), "file"
+        if value is None and s.default is not None:
+            value, source = s.default, "default"
+    if s.kind == "map" and value is not None:
+        if not isinstance(value, dict) or not all(isinstance(v, str) for v in value.values()):
+            raise click.ClickException(f"{s.key} ({source}) must be a table of strings")
+        if key != s.key:
+            value = value.get(key[len(s.key) + 1 :])
+    if value is None:
+        return None, "unset"
+    return value, source
 
 
 class SettingOption(click.Option):
