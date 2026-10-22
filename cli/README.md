@@ -25,9 +25,11 @@ python3 -m pip install -e './cli[test]'   # needs Python 3.11+
 | `be git author [--email] [--name] [--local]` | `gauthor` | Set `user.email` / `user.name` (global by default, `--local` for the current repo) |
 | `be pr review REPO NUMBER [--parent DIR]` | `scripts/pr_review.py` | Clone or reuse a checkout (alias: `be pr r`), then open a cmux workspace running `claude '/pr-review <slug> <number>'`, with the pull request open in a browser pane beside it. The workspace goes in the `prs` workspace group, which is created on first use |
 | `be pr clean [--parent DIR] [--dry-run] [-y]` | | Delete everything inside the PR directory, keeping the directory itself. It lists what it will remove and asks first. It refuses to run if no PR directory is configured, or if the directory is `/`, your home directory, or a parent of it. Symlinks are removed, not followed |
-| `be ws create WORK_DIR [REPOS] [--dir DIR] [--extra-dirs] [--model]` | `scripts/workspace_setup.py` | Clone comma-separated `REPOS` into `WORK_DIR`, open a split cmux workspace with Claude, and save the layout. A relative `WORK_DIR` is created under `--dir` |
+| `be ws create [WORK_DIR] [REPOS] [--dir DIR] [--extra-dirs] [-d DESCRIPTION] [--model] [-i]` | `scripts/workspace_setup.py` | Clone comma-separated `REPOS` into `WORK_DIR`, open a split cmux workspace with Claude, and save the layout. A relative `WORK_DIR` is created under `--dir`. Writes `workspace.yml` at the root with the workspace `name`, `description`, and `extra_dirs`. `-i` prompts for the name, repos, extra dirs, and description, offering any you passed as defaults; `WORK_DIR` is required without it |
 | `be ws open NAME [--dir DIR] [--model MODEL]` | | Open the cmux layout that `ws create` saved for `NAME`, and start Claude in the main pane |
-| `be ws list [-i] [--dir DIR]` | | List workspace directories in `ws.dir` (alias: `be ws ls`). Needs `ws.dir` or `--dir`. `-i` moves through the list; enter opens the selected workspace |
+| `be ws get NAME [--dir DIR]` | | Show a workspace's name, description, repos, and extra dirs as YAML. The name, description, and extra dirs come from `workspace.yml`; repos are the git checkouts directly under the workspace |
+| `be ws list [-i] [--dir DIR]` | | List workspace directories in `ws.dir` (alias: `be ws ls`). Needs `ws.dir` or `--dir`. `-i` moves through the list; enter opens the selected workspace, `g` shows it (as `ws get` does), `d` deletes it and its cmux layout after you confirm, and `q` quits |
+| `be ws delete NAME [--dir DIR] [--keep-layout] [--dry-run] [-y]` | | Delete a workspace directory and its saved cmux layout (alias: `be ws rm`). It shows what it will remove and asks first. It refuses the `--dir` parent, `/`, your home directory or a parent of it, and symlinks. If cmux can't delete the layout, the directory is still removed and a warning is printed |
 
 | `be config ...` | | Inspect and edit the config file (see below) |
 
@@ -72,7 +74,7 @@ bin = "/Applications/cmux.app/Contents/Resources/bin/cmux"
 | `git.email` | `GIT_EMAIL` | `git author` (`--email`) | Value for `git config user.email` | none; required |
 | `git.name` | `GIT_NAME` | `git author` (`--name`) | Value for `git config user.name` | none; required |
 | `pr.dir` | `PRS_DIR` | `pr review`, `pr clean` (`--parent`) | Parent directory for PR checkouts | current directory for `review`; `clean` requires it |
-| `ws.dir` | `WS_DIR` | `ws create`, `ws open`, `ws list` (`--dir`) | Parent directory for a relative workspace path. `list` requires it | current directory for `create` and `open`; `list` requires it |
+| `ws.dir` | `WS_DIR` | `ws create`, `ws open`, `ws get`, `ws list` (`--dir`) | Parent directory for a relative workspace path. `list` requires it | current directory for `create`, `open`, and `get`; `list` requires it |
 | `claude.model` | `BE_CLAUDE_MODEL` | `ws create`, `ws open` (`--model`) | Model passed as `claude --model` | `claude-opus-5-5` |
 | `cmux.bin` | `BE_CMUX_BIN` | `pr review`, `ws create`, `ws open`, `ws list -i` | Path to the cmux binary | `cmux` on `PATH`, then `/Applications/cmux.app/Contents/Resources/bin/cmux` |
 | – | `BE_CONFIG` | everything | Path to the config file | `~/.be/config` |

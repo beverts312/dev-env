@@ -1,7 +1,9 @@
 import json
 import os
 import subprocess
+from pathlib import Path
 
+import yaml
 from click.testing import CliRunner
 
 from be import cmux
@@ -95,6 +97,72 @@ def test_pr_review_creates_prs_group_anchored_on_workspace(tmp_path, monkeypatch
     assert created == [("cmux", "prs", "workspace:3")]
 
 
+def test_ws_create_writes_manifest(tmp_path, monkeypatch):
+    extra = tmp_path / "notes"
+    extra.mkdir()
+    monkeypatch.setattr(cmux, "start", lambda: "cmux")
+    monkeypatch.setattr(cmux, "new_workspace", lambda binary, args: "OK workspace:1")
+    monkeypatch.setattr(cmux, "workspace_ref", lambda output: "workspace:1")
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0))
+    result = CliRunner().invoke(
+        cli,
+        [
+            "ws", "create", "proj", "--dir", str(tmp_path),
+            "--extra-dirs", str(extra), "-d", 'fix "the" thing: soon',
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert yaml.safe_load((tmp_path / "proj" / "workspace.yml").read_text()) == {
+        "name": "proj",
+        "description": 'fix "the" thing: soon',
+        "extra_dirs": [str(extra.resolve())],
+    }
+
+
+def test_ws_create_interactive_prompts(tmp_path, monkeypatch):
+    monkeypatch.setattr(cmux, "start", lambda: "cmux")
+    calls = []
+    monkeypatch.setattr(cmux, "new_workspace", lambda binary, args: calls.append(args) or "")
+    monkeypatch.setattr(cmux, "workspace_ref", lambda output: "workspace:1")
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0))
+    result = CliRunner().invoke(
+        cli, ["ws", "create", "-i", "--dir", str(tmp_path)], input="proj\n\n\nmy work\n"
+    )
+    assert result.exit_code == 0, result.output
+    assert "Workspace name" in result.output
+    assert calls[0][calls[0].index("--name") + 1] == "proj"
+    assert yaml.safe_load((tmp_path / "proj" / "workspace.yml").read_text())["description"] == "my work"
+
+
+def test_ws_create_interactive_defaults_to_given_values(tmp_path, monkeypatch):
+    monkeypatch.setattr(cmux, "start", lambda: "cmux")
+    monkeypatch.setattr(cmux, "new_workspace", lambda binary, args: "")
+    monkeypatch.setattr(cmux, "workspace_ref", lambda output: "workspace:1")
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0))
+    result = CliRunner().invoke(
+        cli,
+        ["ws", "create", "proj", "-i", "-d", "given", "--dir", str(tmp_path)],
+        input="\n\n\n\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert yaml.safe_load((tmp_path / "proj" / "workspace.yml").read_text())["description"] == "given"
+
+
+def test_ws_create_requires_work_dir_without_interactive():
+    result = CliRunner().invoke(cli, ["ws", "create"])
+    assert result.exit_code == 2
+    assert "WORK_DIR" in result.output
+
+
+def test_ws_create_manifest_without_extra_dirs(tmp_path):
+    path = ws.write_manifest(tmp_path, "", [])
+    assert yaml.safe_load(path.read_text()) == {
+        "name": tmp_path.name,
+        "description": "",
+        "extra_dirs": [],
+    }
+
+
 def test_ws_open_missing_directory(tmp_path, monkeypatch):
     def fail() -> None:
         raise AssertionError("cmux should not start")
@@ -133,12 +201,116 @@ def test_ws_list_requires_dir():
 def test_ws_list_interactive_opens_selection(tmp_path, monkeypatch):
     (tmp_path / "alpha").mkdir()
     (tmp_path / "beta").mkdir()
-    monkeypatch.setattr(ws, "choose", lambda names: names[1])
+    monkeypatch.setattr(ws, "choose", lambda names, index=0: ("open", 1))
     calls = []
     monkeypatch.setattr(ws, "open_root", lambda root, model=None: calls.append(root))
     result = CliRunner().invoke(cli, ["ws", "ls", "-i", "--dir", str(tmp_path)])
     assert result.exit_code == 0, result.output
     assert calls == [(tmp_path / "beta").resolve()]
+
+
+def scripted_choose(actions):
+    """Stand in for choose: replay actions and record the names shown each time."""
+    shown = []
+
+    def choose(names, index=0):
+        shown.append((list(names), index))
+        return actions.pop(0) if actions else None
+
+    return choose, shown
+
+
+def test_ws_get_shows_manifest_and_repos(tmp_path):
+    root = tmp_path / "proj"
+    (root / "api" / ".git").mkdir(parents=True)
+    (root / "web" / ".git").mkdir(parents=True)
+    (root / "scratch").mkdir()
+    ws.write_manifest(root, "fix the thing", [Path("/tmp/notes")])
+    result = CliRunner().invoke(cli, ["ws", "get", "proj", "--dir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert yaml.safe_load(result.output) == {
+        "name": "proj",
+        "description": "fix the thing",
+        "repos": ["api", "web"],
+        "extra_dirs": ["/tmp/notes"],
+    }
+
+
+def test_ws_get_without_manifest(tmp_path):
+    (tmp_path / "proj").mkdir()
+    result = CliRunner().invoke(cli, ["ws", "get", "proj", "--dir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert yaml.safe_load(result.output) == {
+        "name": "proj",
+        "description": "",
+        "repos": [],
+        "extra_dirs": [],
+    }
+
+
+def test_ws_get_missing_directory(tmp_path):
+    result = CliRunner().invoke(cli, ["ws", "get", "missing", "--dir", str(tmp_path)])
+    assert result.exit_code == 1
+    assert "is not a directory" in result.output
+
+
+def test_ws_list_interactive_get_then_keeps_listing(tmp_path, monkeypatch):
+    (tmp_path / "alpha").mkdir()
+    (tmp_path / "beta").mkdir()
+    ws.write_manifest(tmp_path / "beta", "beta work", [])
+    choose, shown = scripted_choose([("get", 1)])
+    monkeypatch.setattr(ws, "choose", choose)
+    result = CliRunner().invoke(cli, ["ws", "ls", "-i", "--dir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert "description: beta work" in result.output
+    assert shown == [(["alpha", "beta"], 0), (["alpha", "beta"], 1)]
+
+
+def test_ws_list_interactive_deletes_then_keeps_listing(tmp_path, monkeypatch):
+    for name in ("alpha", "beta", "gamma"):
+        (tmp_path / name).mkdir()
+    choose, shown = scripted_choose([("delete", 2), ("delete", 1)])
+    monkeypatch.setattr(ws, "choose", choose)
+    deleted = []
+    monkeypatch.setattr(cmux, "find_cmux", lambda: "cmux")
+    monkeypatch.setattr(cmux, "delete_layout", lambda binary, name: deleted.append(name) or True)
+    result = CliRunner().invoke(
+        cli, ["ws", "ls", "-i", "--dir", str(tmp_path)], input="y\nn\n"
+    )
+    assert result.exit_code == 0, result.output
+    assert not (tmp_path / "gamma").exists()
+    assert (tmp_path / "beta").is_dir()
+    assert deleted == ["gamma"]
+    assert shown == [
+        (["alpha", "beta", "gamma"], 0),
+        (["alpha", "beta"], 1),
+        (["alpha", "beta"], 1),
+    ]
+
+
+def test_ws_list_interactive_delete_last_workspace(tmp_path, monkeypatch):
+    (tmp_path / "alpha").mkdir()
+    choose, _ = scripted_choose([("delete", 0)])
+    monkeypatch.setattr(ws, "choose", choose)
+    monkeypatch.setattr(cmux, "find_cmux", lambda: "cmux")
+    monkeypatch.setattr(cmux, "delete_layout", lambda binary, name: True)
+    result = CliRunner().invoke(cli, ["ws", "ls", "-i", "--dir", str(tmp_path)], input="y\n")
+    assert result.exit_code == 0, result.output
+    assert not (tmp_path / "alpha").exists()
+    assert "no workspaces" in result.output
+
+
+def test_ws_list_interactive_refuses_symlink(tmp_path, monkeypatch):
+    target = tmp_path / "real"
+    target.mkdir()
+    (tmp_path / "link").symlink_to(target)
+    choose, _ = scripted_choose([("delete", 0)])
+    monkeypatch.setattr(ws, "choose", choose)
+    result = CliRunner().invoke(cli, ["ws", "ls", "-i", "--dir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert "symlink" in result.output
+    assert (tmp_path / "link").is_symlink()
+    assert target.is_dir()
 
 
 def test_ws_list_interactive_quit_does_not_open(tmp_path, monkeypatch):
@@ -147,7 +319,7 @@ def test_ws_list_interactive_quit_does_not_open(tmp_path, monkeypatch):
     def fail() -> None:
         raise AssertionError("cmux should not start")
 
-    monkeypatch.setattr(ws, "choose", lambda names: None)
+    monkeypatch.setattr(ws, "choose", lambda names, index=0: None)
     monkeypatch.setattr(cmux, "start", fail)
     result = CliRunner().invoke(cli, ["ws", "list", "-i", "--dir", str(tmp_path)])
     assert result.exit_code == 0, result.output
@@ -166,6 +338,8 @@ def test_selection_enter_opens_current_row():
     assert ws.selection_action(0, 3, "down") == (1, "stay")
     assert ws.selection_action(0, 3, "up") == (2, "stay")
     assert ws.selection_action(1, 3, "q") == (1, "quit")
+    assert ws.selection_action(1, 3, "d") == (1, "delete")
+    assert ws.selection_action(1, 3, "g") == (1, "get")
 
 
 def test_read_key_arrow():
@@ -221,3 +395,82 @@ def test_pr_r_is_review_alias():
     result = CliRunner().invoke(cli, ["pr", "r", "--help"])
     assert result.exit_code == 0, result.output
     assert "/pr-review" in result.output
+
+
+def make_workspace(tmp_path):
+    workspace = tmp_path / "proj"
+    (workspace / "repo").mkdir(parents=True)
+    (workspace / "workspace.yml").write_text('name: "proj"\n')
+    return workspace
+
+
+def test_ws_delete_removes_directory_and_layout(tmp_path, monkeypatch):
+    workspace = make_workspace(tmp_path)
+    deleted = []
+    monkeypatch.setattr(cmux, "find_cmux", lambda: "cmux")
+    monkeypatch.setattr(cmux, "delete_layout", lambda binary, name: deleted.append(name) or True)
+    result = CliRunner().invoke(cli, ["ws", "delete", "proj", "--dir", str(tmp_path)], input="y\n")
+    assert result.exit_code == 0, result.output
+    assert not workspace.exists()
+    assert tmp_path.is_dir()
+    assert deleted == ["proj"]
+
+
+def test_ws_delete_declined_keeps_everything(tmp_path, monkeypatch):
+    workspace = make_workspace(tmp_path)
+    monkeypatch.setattr(
+        cmux, "delete_layout", lambda *a: (_ for _ in ()).throw(AssertionError("should not delete"))
+    )
+    result = CliRunner().invoke(cli, ["ws", "rm", "proj", "--dir", str(tmp_path)], input="n\n")
+    assert result.exit_code == 1
+    assert workspace.is_dir()
+
+
+def test_ws_delete_dry_run(tmp_path):
+    workspace = make_workspace(tmp_path)
+    result = CliRunner().invoke(cli, ["ws", "delete", "proj", "--dir", str(tmp_path), "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert str(workspace.resolve()) in result.output
+    assert workspace.is_dir()
+
+
+def test_ws_delete_keep_layout(tmp_path, monkeypatch):
+    workspace = make_workspace(tmp_path)
+    monkeypatch.setattr(
+        cmux, "find_cmux", lambda: (_ for _ in ()).throw(AssertionError("should not run cmux"))
+    )
+    result = CliRunner().invoke(
+        cli, ["ws", "delete", "proj", "--dir", str(tmp_path), "--keep-layout", "-y"]
+    )
+    assert result.exit_code == 0, result.output
+    assert not workspace.exists()
+
+
+def test_ws_delete_layout_failure_still_deletes_directory(tmp_path, monkeypatch):
+    workspace = make_workspace(tmp_path)
+    monkeypatch.setattr(cmux, "find_cmux", lambda: "cmux")
+    monkeypatch.setattr(cmux, "delete_layout", lambda binary, name: False)
+    result = CliRunner().invoke(cli, ["ws", "delete", "proj", "--dir", str(tmp_path), "-y"])
+    assert result.exit_code == 0, result.output
+    assert not workspace.exists()
+    assert "could not delete cmux layout proj" in result.output
+
+
+def test_ws_delete_refuses_parent_and_home(tmp_path, monkeypatch):
+    make_workspace(tmp_path)
+    for name in (".", str(tmp_path), "~"):
+        result = CliRunner().invoke(cli, ["ws", "delete", name, "--dir", str(tmp_path), "-y"])
+        assert result.exit_code == 1
+        assert "refusing to delete" in result.output
+    assert tmp_path.is_dir()
+
+
+def test_ws_delete_missing_or_symlink(tmp_path):
+    target = make_workspace(tmp_path)
+    (tmp_path / "link").symlink_to(target)
+    for name in ("missing", "link"):
+        result = CliRunner().invoke(cli, ["ws", "delete", name, "--dir", str(tmp_path), "-y"])
+        assert result.exit_code == 1
+        assert "not a workspace directory" in result.output
+    assert target.is_dir()
+    assert (tmp_path / "link").is_symlink()

@@ -115,6 +115,16 @@ def get_layout(cmux: str, name: str) -> dict:
     return layout
 
 
+def delete_layout(cmux: str, name: str) -> bool:
+    """Delete the layout saved as name; return whether cmux succeeded."""
+    result = subprocess.run(
+        [cmux, "layout", "delete", name], capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        sys.stderr.write(result.stderr)
+    return result.returncode == 0
+
+
 def workspace_ref(output: str) -> str | None:
     match = re.search(r"workspace:\d+", output)
     if match is None:

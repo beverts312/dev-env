@@ -7,7 +7,11 @@ name = "be-cli"
 version = "0.1.0"
 description = "Personal workflow CLI"
 requires-python = ">=3.11"
-dependencies = ["click>=8.1", "tomli-w>=1.0"]
+dependencies = [
+    "click>=8.1",
+    "pyyaml>=6.0",
+    "tomli-w>=1.0",
+]
 
 [project.optional-dependencies]
 test = ["pytest>=8"]

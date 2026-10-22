@@ -6,6 +6,7 @@ import json
 import os
 import select
 import shlex
+import shutil
 import subprocess
 import sys
 import termios
@@ -13,6 +14,7 @@ import tty
 from pathlib import Path
 
 import click
+import yaml
 
 from be import cmux, config
 from be.github import clone, repo_slug
@@ -97,6 +99,10 @@ def selection_action(index: int, count: int, key: str) -> tuple[int, str]:
         return index, "open"
     if key in ("q", "Q", "esc"):
         return index, "quit"
+    if key in ("d", "D"):
+        return index, "delete"
+    if key in ("g", "G"):
+        return index, "get"
     if key == "\x03":
         return index, "abort"
     if key == "up":
@@ -125,17 +131,19 @@ def paint_list(names: list[str], index: int, *, redraw: bool) -> None:
     for i, name in enumerate(names):
         mark = ">" if i == index else " "
         sys.stdout.write(f"\x1b[2K{mark} {name}\r\n")
-    sys.stdout.write("\x1b[2Kenter open, q quit\r\n")
+    sys.stdout.write("\x1b[2Kenter open, g get, d delete, q quit\r\n")
     sys.stdout.flush()
 
 
-def choose(names: list[str]) -> str | None:
-    """Let the user move through names. Enter returns the selected one."""
+def choose(names: list[str], index: int = 0) -> tuple[str, int] | None:
+    """Let the user move through names, starting at index.
+
+    Returns (action, index) for open, get or delete, or None on quit.
+    """
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise click.ClickException("-i needs a terminal")
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
-    index = 0
     painted = False
     try:
         tty.setraw(fd)
@@ -144,8 +152,8 @@ def choose(names: list[str]) -> str | None:
         painted = True
         while True:
             index, action = selection_action(index, len(names), read_key(fd))
-            if action == "open":
-                return names[index]
+            if action in ("open", "get", "delete"):
+                return action, index
             if action == "quit":
                 return None
             if action == "abort":
@@ -215,6 +223,53 @@ def open_root(root: Path, model: str | None = None) -> None:
     )
 
 
+MANIFEST = "workspace.yml"
+
+
+def write_manifest(root: Path, description: str, extra_dirs: list[Path]) -> Path:
+    manifest = {
+        "name": root.name,
+        "description": description,
+        "extra_dirs": [str(directory) for directory in extra_dirs],
+    }
+    path = root / MANIFEST
+    path.write_text(yaml.safe_dump(manifest, sort_keys=False))
+    return path
+
+
+def workspace_details(root: Path) -> dict:
+    """Read the manifest and find the repo checkouts directly under root."""
+    path = root / MANIFEST
+    manifest = yaml.safe_load(path.read_text()) if path.is_file() else None
+    manifest = manifest if isinstance(manifest, dict) else {}
+    repos = sorted(
+        entry.name for entry in root.iterdir() if entry.is_dir() and (entry / ".git").exists()
+    )
+    return {
+        "name": manifest.get("name") or root.name,
+        "description": manifest.get("description") or "",
+        "repos": repos,
+        "extra_dirs": manifest.get("extra_dirs") or [],
+    }
+
+
+def show_workspace(root: Path) -> None:
+    click.echo(yaml.safe_dump(workspace_details(root), sort_keys=False), nl=False)
+
+
+def prompt_create(
+    work_dir: str | None, repos: str, extra_dirs: str, description: str
+) -> tuple[str, str, str, str]:
+    """Ask for each create input, offering any value already given as the default."""
+    work_dir = click.prompt("Workspace name", default=work_dir)
+    repos = click.prompt("Repos (comma separated)", default=repos, show_default=bool(repos))
+    extra_dirs = click.prompt(
+        "Extra dirs (comma separated)", default=extra_dirs, show_default=bool(extra_dirs)
+    )
+    description = click.prompt("Description", default=description, show_default=bool(description))
+    return work_dir, repos, extra_dirs, description
+
+
 def build_layout(root: Path, repos: list[str], extra_dirs: list[Path], model: str = "") -> dict:
     used: set[str] = set()
     panes = [terminal_pane(pane_name(repo, used), root / repo) for repo in repos]
@@ -233,12 +288,15 @@ def build_layout(root: Path, repos: list[str], extra_dirs: list[Path], model: st
 
 
 @ws.command()
-@click.argument("work_dir")
+@click.argument("work_dir", required=False)
 @click.argument("repos", required=False, default="")
 @click.option(
     "--extra-dirs",
     default="",
     help="Comma separated directories to add as panes and to Claude's context.",
+)
+@click.option(
+    "-d", "--description", default="", help=f"Description saved in {MANIFEST}."
 )
 @config.option(
     "ws.dir",
@@ -248,15 +306,35 @@ def build_layout(root: Path, repos: list[str], extra_dirs: list[Path], model: st
 )
 @config.option("claude.model", "--model", help="Claude model, passed as claude --model.")
 @config.option("work_org", "--org", help="GitHub org for the repos.")
+@click.option(
+    "-i",
+    "--interactive",
+    is_flag=True,
+    help="Prompt for the name, repos, extra dirs and description.",
+)
 def create(
-    work_dir: str, repos: str, extra_dirs: str, parent: str | None, model: str, org: str | None
+    work_dir: str | None,
+    repos: str,
+    extra_dirs: str,
+    description: str,
+    parent: str | None,
+    model: str,
+    org: str | None,
+    interactive: bool,
 ) -> None:
     """Clone REPOS (comma separated) into WORK_DIR and open a cmux workspace."""
+    if interactive:
+        work_dir, repos, extra_dirs, description = prompt_create(
+            work_dir, repos, extra_dirs, description
+        )
+    elif not work_dir:
+        raise click.UsageError("missing WORK_DIR; pass it or use -i")
     repo_names = parse_csv(repos)
     dirs = extra_dir_paths(extra_dirs)
 
     root = workspace_root(work_dir, parent)
     root.mkdir(parents=True, exist_ok=True)
+    write_manifest(root, description, dirs)
     os.chdir(root)
 
     for repo in repo_names:
@@ -297,6 +375,22 @@ def open_workspace(name: str, parent: str | None, model: str) -> None:
     open_root(workspace_root(name, parent), model)
 
 
+@ws.command(name="get")
+@click.argument("name")
+@config.option(
+    "ws.dir",
+    "--dir",
+    "parent",
+    help="Parent directory for a relative NAME (default: current directory).",
+)
+def get_workspace(name: str, parent: str | None) -> None:
+    """Show workspace NAME: its name, description, repos and extra dirs."""
+    root = workspace_root(name, parent)
+    if not root.is_dir():
+        raise click.ClickException(f"{root} is not a directory")
+    show_workspace(root)
+
+
 @ws.command(name="list")
 @config.option(
     "ws.dir",
@@ -304,7 +398,9 @@ def open_workspace(name: str, parent: str | None, model: str) -> None:
     "parent",
     help="Directory that holds the workspaces.",
 )
-@click.option("-i", "--interactive", is_flag=True, help="Select a workspace; enter opens it.")
+@click.option(
+    "-i", "--interactive", is_flag=True, help="Select a workspace; enter opens it, g shows it."
+)
 def list_workspaces(parent: str | None, interactive: bool) -> None:
     """List workspaces. Also available as ls."""
     entries = workspace_entries(parent)
@@ -312,13 +408,91 @@ def list_workspaces(parent: str | None, interactive: bool) -> None:
         for entry in entries:
             click.echo(entry.name)
         return
-    if not entries:
-        click.echo("no workspaces")
-        return
-    chosen = choose([entry.name for entry in entries])
-    if chosen is None:
-        return
-    open_root(next(entry for entry in entries if entry.name == chosen))
+    index = 0
+    while entries:
+        chosen = choose([entry.name for entry in entries], index)
+        if chosen is None:
+            return
+        action, index = chosen
+        if action == "open":
+            open_root(entries[index])
+            return
+        if action == "get":
+            show_workspace(entries[index])
+            continue
+        name = entries[index].name
+        try:
+            root = delete_target(name, parent)
+        except click.ClickException as e:
+            click.echo(e.message, err=True)
+            continue
+        if click.confirm(f"Permanently delete workspace {name} and its cmux layout?"):
+            remove_workspace(root)
+            entries = workspace_entries(parent)
+            index = min(index, max(len(entries) - 1, 0))
+    click.echo("no workspaces")
 
 
 ws.add_command(list_workspaces, name="ls")
+
+
+def delete_target(name: str, parent: str | None) -> Path:
+    """Resolve NAME to a workspace directory that is safe to remove."""
+    base = Path(parent).expanduser() if parent else Path(".")
+    # check before resolving, which would follow a symlinked NAME to its target
+    if (base / Path(name).expanduser()).is_symlink():
+        raise click.ClickException(f"{name} is a symlink, not a workspace directory")
+    root = workspace_root(name, parent)
+    home = Path.home().resolve()
+    protected = {Path("/"), home, *home.parents}
+    if parent:
+        protected.add(Path(parent).expanduser().resolve())
+    if root in protected:
+        raise click.ClickException(f"refusing to delete {root}")
+    if not root.is_dir():
+        raise click.ClickException(f"{root} is not a workspace directory")
+    return root
+
+
+@ws.command()
+@click.argument("name")
+@config.option(
+    "ws.dir",
+    "--dir",
+    "parent",
+    help="Parent directory for a relative NAME (default: current directory).",
+)
+@click.option("--keep-layout", is_flag=True, help="Keep the saved cmux layout.")
+@click.option("--dry-run", is_flag=True, help="Show what would be deleted and stop.")
+@click.option("-y", "--yes", is_flag=True, help="Delete without asking for confirmation.")
+def delete(name: str, parent: str | None, keep_layout: bool, dry_run: bool, yes: bool) -> None:
+    """Delete workspace NAME: its directory and its saved cmux layout. Also available as rm."""
+    root = delete_target(name, parent)
+    click.echo(f"directory: {root}")
+    if not keep_layout:
+        click.echo(f"cmux layout: {root.name}")
+    if dry_run:
+        return
+    if not yes:
+        click.confirm(f"Permanently delete workspace {root.name}?", abort=True)
+    remove_workspace(root, keep_layout)
+
+
+def remove_workspace(root: Path, keep_layout: bool = False) -> None:
+    """Delete root and, unless keep_layout, the cmux layout saved under its name."""
+    shutil.rmtree(root)
+    click.echo(f"deleted {root}")
+    if keep_layout:
+        return
+    try:
+        binary = cmux.find_cmux()
+    except click.ClickException as e:
+        click.echo(f"{e.message}; layout {root.name} not deleted", err=True)
+        return
+    if cmux.delete_layout(binary, root.name):
+        click.echo(f"deleted cmux layout {root.name}")
+    else:
+        click.echo(f"could not delete cmux layout {root.name}", err=True)
+
+
+ws.add_command(delete, name="rm")
