@@ -39,6 +39,11 @@ SETTINGS = {
         Setting("ws.dir", "WS_DIR", "Parent directory for workspaces"),
         Setting("claude.model", "BE_CLAUDE_MODEL", "Model passed as claude --model", "claude-opus-5-5"),
         Setting("cmux.bin", "BE_CMUX_BIN", "Path to the cmux binary"),
+        Setting(
+            "cmux.window",
+            "BE_CMUX_WINDOW",
+            "cmux window for new workspaces: pick, or a window index, ref or UUID",
+        ),
         Setting("cloudflare.account_id", "CLOUDFLARE_ACCOUNT_ID", "Cloudflare account for new zones"),
         Setting("jira.url", "JIRA_URL", "Base URL of the Jira site"),
         Setting("jira.email", "JIRA_EMAIL", "Atlassian account email for the Jira API"),

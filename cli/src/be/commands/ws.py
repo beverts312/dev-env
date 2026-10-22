@@ -127,30 +127,36 @@ def read_key(fd: int) -> str:
     return {b"A": "up", b"B": "down"}.get(last, "esc")
 
 
-def paint_list(names: list[str], index: int, *, redraw: bool) -> None:
+LIST_HINT = "enter open, g get, j refresh Jira, d delete, q quit"
+WINDOW_HINT = "enter select, q quit"
+
+
+def paint_list(names: list[str], index: int, *, redraw: bool, hint: str = LIST_HINT) -> None:
     if redraw:
         sys.stdout.write(f"\x1b[{len(names) + 1}A")
+    # rows must not wrap, or the redraw above moves up too few lines
+    width = max(shutil.get_terminal_size().columns - 3, 10)
     for i, name in enumerate(names):
         mark = ">" if i == index else " "
-        sys.stdout.write(f"\x1b[2K{mark} {name}\r\n")
-    sys.stdout.write("\x1b[2Kenter open, g get, j refresh Jira, d delete, q quit\r\n")
+        sys.stdout.write(f"\x1b[2K{mark} {name[:width]}\r\n")
+    sys.stdout.write(f"\x1b[2K{hint}\r\n")
     sys.stdout.flush()
 
 
-def choose(names: list[str], index: int = 0) -> tuple[str, int] | None:
+def choose(names: list[str], index: int = 0, hint: str = LIST_HINT) -> tuple[str, int] | None:
     """Let the user move through names, starting at index.
 
     Returns (action, index) for open, get, jira or delete, or None on quit.
     """
     if not sys.stdin.isatty() or not sys.stdout.isatty():
-        raise click.ClickException("-i needs a terminal")
+        raise click.ClickException("choosing from a list needs a terminal")
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
     painted = False
     try:
         tty.setraw(fd)
         sys.stdout.write("\x1b[?25l")
-        paint_list(names, index, redraw=False)
+        paint_list(names, index, redraw=False, hint=hint)
         painted = True
         while True:
             index, action = selection_action(index, len(names), read_key(fd))
@@ -161,7 +167,7 @@ def choose(names: list[str], index: int = 0) -> tuple[str, int] | None:
             if action == "abort":
                 raise click.Abort()
             if action == "stay":
-                paint_list(names, index, redraw=True)
+                paint_list(names, index, redraw=True, hint=hint)
     finally:
         sys.stdout.write("\x1b[?25h")
         if painted:
@@ -202,7 +208,50 @@ def stamp_claude(layout: dict, command: str, cwd: str) -> None:
     target["focus"] = True
 
 
-def open_root(root: Path, model: str | None = None) -> None:
+def window_labels(binary: str, windows: list[dict]) -> list[str]:
+    """Label each window by its selected workspace, since windows have no titles."""
+    # outside cmux, current-window is just the frontmost window, not ours
+    here = cmux.current_window(binary) if cmux.inside() else None
+    labels = []
+    for window in windows:
+        label = (
+            f"{window.get('index')}: {cmux.window_title(binary, window['id'])}"
+            f" ({window.get('workspace_count', 0)} workspaces)"
+        )
+        labels.append(label + (" - this window" if window["id"] == here else ""))
+    return labels
+
+
+def target_window(binary: str, value: str | None) -> str | None:
+    """Resolve the --window value: pick asks, anything else goes to cmux as is.
+
+    Unset means the caller's window inside cmux, and pick outside it.
+    """
+    if not value:
+        if cmux.inside():
+            return None
+        value = "pick"
+    if value != "pick":
+        return value
+    windows = cmux.list_windows(binary)
+    if len(windows) <= 1:
+        return None
+    labels = window_labels(binary, windows)
+    index = 0
+    while True:
+        chosen = choose(labels, index, hint=WINDOW_HINT)
+        if chosen is None:
+            raise click.Abort()
+        action, index = chosen
+        if action == "open":
+            return windows[index]["id"]
+
+
+def window_args(window: str | None) -> list[str]:
+    return ["--window", window] if window else []
+
+
+def open_root(root: Path, model: str | None = None, window: str | None = None) -> None:
     if not root.is_dir():
         raise click.ClickException(f"{root} is not a directory")
     if not model:
@@ -210,6 +259,7 @@ def open_root(root: Path, model: str | None = None) -> None:
     binary = cmux.start()
     layout = cmux.get_layout(binary, root.name)
     stamp_claude(layout, claude_command([], model or ""), str(root))
+    target = target_window(binary, window)
     cmux.new_workspace(
         binary,
         [
@@ -221,6 +271,7 @@ def open_root(root: Path, model: str | None = None) -> None:
             "true",
             "--layout",
             json.dumps(layout),
+            *window_args(target),
         ],
     )
 
@@ -297,6 +348,17 @@ def refresh_issue_name(root: Path) -> None:
     click.echo(f"{root.name}: {issue_name}")
 
 
+def workspace_labels(entries: list[Path]) -> list[str]:
+    """One line per workspace: its name, then its issue name and description."""
+    width = max((len(entry.name) for entry in entries), default=0)
+    labels = []
+    for entry in entries:
+        manifest = read_manifest(entry)
+        details = [manifest.get("issue_name"), manifest.get("description")]
+        labels.append(f"{entry.name:<{width}}  {' - '.join(d for d in details if d)}".rstrip())
+    return labels
+
+
 def show_workspace(root: Path) -> None:
     click.echo(yaml.safe_dump(workspace_details(root), sort_keys=False), nl=False)
 
@@ -350,6 +412,9 @@ def build_layout(root: Path, repos: list[str], extra_dirs: list[Path], model: st
 )
 @config.option("claude.model", "--model", help="Claude model, passed as claude --model.")
 @config.option("work_org", "--org", help="GitHub org for the repos.")
+@config.option(
+    "cmux.window", "--window", help="cmux window to open in: pick, or an index, ref or UUID."
+)
 @click.option(
     "-i",
     "--interactive",
@@ -364,6 +429,7 @@ def create(
     parent: str | None,
     model: str,
     org: str | None,
+    window: str | None,
     interactive: bool,
 ) -> None:
     """Clone REPOS (comma separated) into WORK_DIR and open a cmux workspace."""
@@ -390,6 +456,7 @@ def create(
 
     binary = cmux.start()
     args = ["--name", issue_name or root.name, "--cwd", str(root), "--focus", "true"]
+    args += window_args(target_window(binary, window))
     if repo_names or dirs:
         args += ["--layout", json.dumps(build_layout(root, checkouts, dirs, model))]
     else:
@@ -415,9 +482,12 @@ def create(
     help="Parent directory for a relative NAME (default: current directory).",
 )
 @config.option("claude.model", "--model", help="Claude model, passed as claude --model.")
-def open_workspace(name: str, parent: str | None, model: str) -> None:
+@config.option(
+    "cmux.window", "--window", help="cmux window to open in: pick, or an index, ref or UUID."
+)
+def open_workspace(name: str, parent: str | None, model: str, window: str | None) -> None:
     """Open the cmux layout that `ws create` saved for NAME, with Claude in the main pane."""
-    open_root(workspace_root(name, parent), model)
+    open_root(workspace_root(name, parent), model, window)
 
 
 @ws.command(name="get")
@@ -446,7 +516,10 @@ def get_workspace(name: str, parent: str | None) -> None:
 @click.option(
     "-i", "--interactive", is_flag=True, help="Select a workspace; enter opens it, g shows it."
 )
-def list_workspaces(parent: str | None, interactive: bool) -> None:
+@config.option(
+    "cmux.window", "--window", help="cmux window to open in: pick, or an index, ref or UUID."
+)
+def list_workspaces(parent: str | None, interactive: bool, window: str | None) -> None:
     """List workspaces. Also available as ls."""
     entries = workspace_entries(parent)
     if not interactive:
@@ -455,12 +528,12 @@ def list_workspaces(parent: str | None, interactive: bool) -> None:
         return
     index = 0
     while entries:
-        chosen = choose([entry.name for entry in entries], index)
+        chosen = choose(workspace_labels(entries), index)
         if chosen is None:
             return
         action, index = chosen
         if action == "open":
-            open_root(entries[index])
+            open_root(entries[index], window=window)
             return
         if action == "get":
             show_workspace(entries[index])

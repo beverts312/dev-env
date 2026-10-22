@@ -46,7 +46,14 @@ def ensure_cmux_running(cmux: str) -> None:
         if cmux_ready(cmux):
             return
         time.sleep(0.5)
-    raise click.ClickException("cmux did not become ready")
+    hint = ""
+    if not inside():
+        # the default socket mode, cmuxOnly, refuses processes started outside cmux
+        hint = (
+            "; if cmux is running, its socket may refuse processes outside cmux:"
+            " check `cmux socket-status` and set automation.socketControlMode"
+        )
+    raise click.ClickException(f"cmux did not become ready{hint}")
 
 
 def start() -> str:
@@ -66,6 +73,52 @@ def new_workspace(cmux: str, args: list[str]) -> str:
     if created.returncode != 0:
         raise click.exceptions.Exit(created.returncode)
     return created.stdout
+
+
+def inside() -> bool:
+    """Whether this process runs in a cmux terminal."""
+    return bool(os.environ.get("CMUX_WORKSPACE_ID"))
+
+
+def list_windows(cmux: str) -> list[dict]:
+    """Return the cmux windows: id, index, workspace_count and more."""
+    result = subprocess.run([cmux, "list-windows", "--json"], capture_output=True, text=True)
+    if result.returncode != 0:
+        sys.stderr.write(result.stderr)
+        raise click.ClickException("could not list cmux windows")
+    try:
+        windows = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        raise click.ClickException("cmux returned unreadable windows") from None
+    if not isinstance(windows, list):
+        raise click.ClickException("cmux returned unreadable windows")
+    return windows
+
+
+def current_window(cmux: str) -> str | None:
+    """Return the id of the window the caller is in, if cmux knows it."""
+    result = subprocess.run([cmux, "current-window"], capture_output=True, text=True)
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+def window_title(cmux: str, window: str) -> str:
+    """Return the title of the selected workspace in window, or ""."""
+    result = subprocess.run(
+        [cmux, "workspace", "list", "--window", window, "--json"],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "CMUX_QUIET": "1"},
+    )
+    try:
+        workspaces = json.loads(result.stdout)["workspaces"]
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return ""
+    for workspace in workspaces:
+        if workspace.get("selected"):
+            return workspace.get("title") or ""
+    return ""
 
 
 def find_group(cmux: str, name: str) -> str | None:

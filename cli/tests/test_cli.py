@@ -3,6 +3,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import click
+import pytest
 import yaml
 from click.testing import CliRunner
 
@@ -300,7 +302,7 @@ def test_ws_list_interactive_opens_selection(tmp_path, monkeypatch):
     (tmp_path / "beta").mkdir()
     monkeypatch.setattr(ws, "choose", lambda names, index=0: ("open", 1))
     calls = []
-    monkeypatch.setattr(ws, "open_root", lambda root, model=None: calls.append(root))
+    monkeypatch.setattr(ws, "open_root", lambda root, model=None, window=None: calls.append(root))
     result = CliRunner().invoke(cli, ["ws", "ls", "-i", "--dir", str(tmp_path)])
     assert result.exit_code == 0, result.output
     assert calls == [(tmp_path / "beta").resolve()]
@@ -360,7 +362,7 @@ def test_ws_list_interactive_get_then_keeps_listing(tmp_path, monkeypatch):
     result = CliRunner().invoke(cli, ["ws", "ls", "-i", "--dir", str(tmp_path)])
     assert result.exit_code == 0, result.output
     assert "description: beta work" in result.output
-    assert shown == [(["alpha", "beta"], 0), (["alpha", "beta"], 1)]
+    assert shown == [(["alpha", "beta   beta work"], 0), (["alpha", "beta   beta work"], 1)]
 
 
 def test_ws_list_interactive_refreshes_jira(tmp_path, monkeypatch):
@@ -382,6 +384,116 @@ def test_ws_list_interactive_refreshes_jira(tmp_path, monkeypatch):
     assert manifest["issue_name"] == "Summary of ACME-1"
     assert manifest["description"] == "keep me"
     assert not (tmp_path / "notes" / "workspace.yml").exists()
+
+
+def test_workspace_labels(tmp_path):
+    for name in ("ACME-1-x", "notes", "bare"):
+        (tmp_path / name).mkdir()
+    ws.write_manifest(tmp_path / "ACME-1-x", "login work", [], "Fix login")
+    ws.write_manifest(tmp_path / "notes", "scratch", [])
+    entries = [tmp_path / name for name in ("ACME-1-x", "notes", "bare")]
+    assert ws.workspace_labels(entries) == [
+        "ACME-1-x  Fix login - login work",
+        "notes     scratch",
+        "bare",
+    ]
+
+
+def stub_create(monkeypatch):
+    calls = []
+    monkeypatch.setattr(cmux, "start", lambda: "cmux")
+    monkeypatch.setattr(cmux, "new_workspace", lambda binary, args: calls.append(args) or "")
+    monkeypatch.setattr(cmux, "workspace_ref", lambda output: "workspace:1")
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0))
+    return calls
+
+
+def window_arg(args):
+    return args[args.index("--window") + 1] if "--window" in args else None
+
+
+@pytest.fixture(autouse=True)
+def inside_cmux(monkeypatch):
+    """Run as if from a cmux terminal unless a test says otherwise."""
+    monkeypatch.setenv("CMUX_WORKSPACE_ID", "test")
+
+
+def test_ws_window_unset_outside_cmux_picks(monkeypatch):
+    monkeypatch.delenv("CMUX_WORKSPACE_ID")
+    windows = [{"id": "W0", "index": 0, "workspace_count": 2}, {"id": "W1", "index": 1, "workspace_count": 1}]
+    monkeypatch.setattr(cmux, "list_windows", lambda binary: windows)
+    monkeypatch.setattr(cmux, "current_window", lambda binary: pytest.fail("not inside cmux"))
+    monkeypatch.setattr(cmux, "window_title", lambda binary, window: "t")
+    seen = []
+    monkeypatch.setattr(ws, "choose", lambda names, index=0, hint="": seen.append(names) or ("open", 1))
+    assert ws.target_window("cmux", None) == "W1"
+    assert seen == [["0: t (2 workspaces)", "1: t (1 workspaces)"]]
+    assert ws.target_window("cmux", "2") == "2"
+
+
+def test_ws_window_unset_inside_cmux_uses_callers_window(monkeypatch):
+    monkeypatch.setattr(cmux, "list_windows", lambda binary: pytest.fail("listed windows"))
+    assert ws.target_window("cmux", None) is None
+
+
+def test_ws_create_window_passthrough(tmp_path, monkeypatch):
+    calls = stub_create(monkeypatch)
+    CliRunner().invoke(cli, ["ws", "create", "a", "--dir", str(tmp_path), "--window", "1"])
+    CliRunner().invoke(cli, ["ws", "create", "b", "--dir", str(tmp_path)])
+    assert [window_arg(args) for args in calls] == ["1", None]
+
+
+def test_ws_create_window_pick(tmp_path, monkeypatch):
+    calls = stub_create(monkeypatch)
+    CliRunner().invoke(cli, ["config", "set", "cmux.window", "pick"])
+    windows = [{"id": "W0", "index": 0, "workspace_count": 3}, {"id": "W1", "index": 1, "workspace_count": 1}]
+    monkeypatch.setattr(cmux, "list_windows", lambda binary: windows)
+    monkeypatch.setattr(cmux, "current_window", lambda binary: "W0")
+    monkeypatch.setattr(cmux, "window_title", lambda binary, window: f"title {window}")
+    seen = []
+
+    def choose(names, index=0, hint=ws.LIST_HINT):
+        seen.append((names, hint))
+        return [("get", 0), ("open", 1)][len(seen) - 1]
+
+    monkeypatch.setattr(ws, "choose", choose)
+    result = CliRunner().invoke(cli, ["ws", "create", "a", "--dir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert window_arg(calls[0]) == "W1"
+    assert seen[0] == (
+        ["0: title W0 (3 workspaces) - this window", "1: title W1 (1 workspaces)"],
+        ws.WINDOW_HINT,
+    )
+    assert len(seen) == 2
+
+
+def test_ws_window_pick_with_one_window_skips_prompt(tmp_path, monkeypatch):
+    calls = stub_create(monkeypatch)
+    monkeypatch.setattr(cmux, "list_windows", lambda binary: [{"id": "W0", "index": 0}])
+    monkeypatch.setattr(ws, "choose", lambda *a, **k: pytest.fail("prompted"))
+    result = CliRunner().invoke(cli, ["ws", "create", "a", "--dir", str(tmp_path), "--window", "pick"])
+    assert result.exit_code == 0, result.output
+    assert window_arg(calls[0]) is None
+
+
+def test_ws_window_pick_quit_aborts(monkeypatch):
+    monkeypatch.setattr(cmux, "list_windows", lambda binary: [{"id": "W0"}, {"id": "W1"}])
+    monkeypatch.setattr(cmux, "current_window", lambda binary: None)
+    monkeypatch.setattr(cmux, "window_title", lambda binary, window: "")
+    monkeypatch.setattr(ws, "choose", lambda *a, **k: None)
+    with pytest.raises(click.Abort):
+        ws.target_window("cmux", "pick")
+
+
+def test_ws_open_passes_window(tmp_path, monkeypatch):
+    (tmp_path / "proj").mkdir()
+    calls = []
+    monkeypatch.setattr(cmux, "start", lambda: "cmux")
+    monkeypatch.setattr(cmux, "get_layout", lambda binary, name: {"type": "terminal", "name": "claude"})
+    monkeypatch.setattr(cmux, "new_workspace", lambda binary, args: calls.append(args) or "")
+    result = CliRunner().invoke(cli, ["ws", "open", "proj", "--dir", str(tmp_path), "--window", "2"])
+    assert result.exit_code == 0, result.output
+    assert window_arg(calls[0]) == "2"
 
 
 def test_ws_list_interactive_deletes_then_keeps_listing(tmp_path, monkeypatch):
