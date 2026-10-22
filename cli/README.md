@@ -24,6 +24,7 @@ Some commands need an extra for their cloud clients:
 
 - `be backup upload` and `download`: `uv tool install --editable './cli[backup]'`
 - `be dns r53-cf`: `uv tool install --editable './cli[dns]'`
+- `be kube`: `uv tool install --editable './cli[kube]'`
 
 Combine them as `'./cli[backup,dns]'`.
 
@@ -54,6 +55,19 @@ Combine them as `'./cli[backup,dns]'`.
 | `be ws get NAME [--dir DIR]` | | Show a workspace's name, description, repos, and extra dirs as YAML. The name, description, and extra dirs come from `workspace.yml`; repos are the git checkouts directly under the workspace |
 | `be ws list [-i] [--dir DIR]` | | List workspace directories in `ws.dir` (alias: `be ws ls`). Needs `ws.dir` or `--dir`. `-i` moves through the list; enter opens the selected workspace, `g` shows it (as `ws get` does), `d` deletes it and its cmux layout after you confirm, and `q` quits |
 | `be ws delete NAME [--dir DIR] [--keep-layout] [--dry-run] [-y]` | | Delete a workspace directory and its saved cmux layout (alias: `be ws rm`). It shows what it will remove and asks first. It refuses the `--dir` parent, `/`, your home directory or a parent of it, and symlinks. If cmux can't delete the layout, the directory is still removed and a warning is printed |
+
+### `be kube`
+
+Ported from the `bk` CLI (left as is in `~/notes/bk`). Uses the current
+kubeconfig context, as kubectl does. Needs the `kube` extra (see
+[Install](#install)).
+
+| Command | What it does |
+|---|---|
+| `be kube pool NODE_POOL` | Table of the pods on every node in the GKE node pool (`cloud.google.com/gke-nodepool` label), with namespace and ready containers |
+| `be kube secret NAME [-n NAMESPACE]` | Print a secret's keys with base64-decoded values. The namespace defaults to the current context's namespace (as set by `kns`), then `default` |
+| `be kube rm-fin RESOURCE...` | Remove `metadata.finalizers` from a resource stuck deleting (alias: `rm_fin`). Arguments go straight to `kubectl patch`, so `pod/foo`, `pod foo -n ns`, or any CRD works. Shells out to `kubectl`, so it doesn't need the `kube` extra |
+| `be kube get-all [KUBECTL_ARGS...]` | Run `kubectl get` for every listable namespaced resource type in the current namespace (alias: `kall`). Extra arguments, such as `-n ns` or `-l app=foo`, go to each `kubectl get`. Shells out to `kubectl`, so it doesn't need the `kube` extra |
 
 ### `be backup`
 
