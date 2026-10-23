@@ -18,11 +18,18 @@ TABLES = (("review", "review requests"), ("mine", "your PRs"), ("jira", "jira is
 # which PR list each PR table shows, as pr.fetch_prs(mine)
 MINE = {"review": False, "mine": True}
 
+# (key, options, default, value) for the PR tables' filter dropdowns, defaulting to what
+# pr.filter_prs shows: a row is hidden unless value(row) is the chosen option, or "all" is;
+# while one option is chosen the key's column is hidden, as every row would show it
+PR_SELECTS = (
+    ("checks", ("pass", "fail", "pending", "none"), "pass", lambda p: p["checks"]),
+    ("state", ("ready", "draft"), "ready", lambda p: "draft" if p["draft"] else "ready"),
+)
+SELECT_ALL = "all"
+
 # (key, label, hides) for each table's filter checkboxes, matching pr.filter_prs and
 # jira_command.filter_issues; a row is hidden while any checked filter hides it
 PR_FILTERS = (
-    ("checks", "passing checks", lambda p: p["checks"] != "pass"),
-    ("draft", "not drafts", lambda p: p["draft"]),
     ("renovate", f"not by {pr.RENOVATE_USER}", lambda p: same_login(p["author"], pr.RENOVATE_USER)),
 )
 ISSUE_FILTERS = (
@@ -48,7 +55,7 @@ form { margin: 0; }
   .msg { background: #333; }
   .keys, .empty { color: #999; }
 }
-"""
+""" + "".join(f".hide-{key} .col-{key} {{ display: none; }}\n" for key, *_ in PR_SELECTS)
 
 # keyboard parity with `pr ls -i`: arrows/j/k move, enter reviews (or opens an issue), o opens,
 # m switches table, a toggles the table's filters, r marks your draft ready, u enables auto-merge;
@@ -58,14 +65,19 @@ const sections = [...document.querySelectorAll("section")];
 let t = 0, r = 0;
 const rows = () => [...sections[t].querySelectorAll("tr.pr:not(.filtered), tr.issue:not(.filtered)")];
 const boxes = s => [...s.querySelectorAll(".filters input[type=checkbox]")];
+const selects = s => [...s.querySelectorAll(".filters select")];
 const storeKey = (s, box) => `be.filter.${s.dataset.table}.${box.name}`;
 function applyFilters(s) {
   const on = boxes(s).filter(b => b.checked).map(b => b.name);
+  // a dropdown set to one value hides the rows without it, and its column
+  const picked = selects(s).filter(x => x.value !== "all");
+  selects(s).forEach(x => s.classList.toggle(`hide-${x.name}`, x.value !== "all"));
   const search = s.querySelector(".filters input[type=search]");
   const text = search ? search.value.trim().toLowerCase() : "";
   let hidden = 0;
   s.querySelectorAll("tr.pr, tr.issue").forEach(row => {
     const hide = (row.dataset.hide || "").split(" ").some(k => on.includes(k))
+      || picked.some(x => row.dataset[x.name] !== x.value)
       || (text !== "" && !(row.dataset.search || "").includes(text));
     row.classList.toggle("filtered", hide);
     hidden += hide;
@@ -88,6 +100,18 @@ sections.forEach(s => {
       draw();
     });
   });
+  selects(s).forEach(x => {
+    try {
+      const v = localStorage.getItem(storeKey(s, x));
+      if ([...x.options].some(o => o.value === v)) x.value = v;
+    } catch {}
+    x.addEventListener("change", () => {
+      try { localStorage.setItem(storeKey(s, x), x.value); } catch {}
+      applyFilters(s);
+      r = 0;
+      draw();
+    });
+  });
   const search = s.querySelector(".filters input[type=search]");
   if (search) {
     try { search.value = localStorage.getItem(storeKey(s, search)) || ""; } catch {}
@@ -107,6 +131,8 @@ document.addEventListener("keydown", e => {
     if (e.key === "Escape" || e.key === "Enter") { e.target.blur(); e.preventDefault(); }
     return;
   }
+  // a focused dropdown keeps its own keys
+  if (e.target.tagName === "SELECT") return;
   if (e.key === "/") {
     const search = sections[t].querySelector(".filters input[type=search]");
     if (search) { search.focus(); e.preventDefault(); }
@@ -117,10 +143,12 @@ document.addEventListener("keydown", e => {
   else if (e.key === "ArrowUp" || e.key === "k") r = Math.max(r - 1, 0);
   else if (e.key === "m") { t = (t + 1) % sections.length; r = 0; }
   else if (e.key === "a") {
-    // like --all: clear every filter, or turn them all back on
-    const bs = boxes(sections[t]);
-    const on = !bs.some(b => b.checked);
-    bs.forEach(b => { if (b.checked !== on) { b.checked = on; b.dispatchEvent(new Event("change")); } });
+    // like --all: clear every filter, or turn them all back on (dropdowns to their defaults)
+    const s = sections[t], bs = boxes(s), xs = selects(s);
+    const on = !bs.some(b => b.checked) && !xs.some(x => x.value !== "all");
+    const set = (el, prop, v) => { if (el[prop] !== v) { el[prop] = v; el.dispatchEvent(new Event("change")); } };
+    bs.forEach(b => set(b, "checked", on));
+    xs.forEach(x => set(x, "value", on ? x.dataset.default : "all"));
     r = 0;
   }
   else if (e.key === "o" && row) { window.open(row.querySelector("a").href, "_blank"); return; }
@@ -160,8 +188,21 @@ def mine_actions(p: dict) -> list[str]:
 
 
 def pr_header(mine: bool) -> tuple[str, ...]:
-    """pr.PR_HEADER, without the author on your PRs, which are all yours."""
-    return tuple(h for h in pr.PR_HEADER if not (mine and h == "AUTHOR"))
+    """pr.PR_HEADER with a draft/ready state column, without the author on your PRs,
+    which are all yours."""
+    header = [h for h in pr.PR_HEADER if not (mine and h == "AUTHOR")]
+    header.insert(header.index("CHECKS") + 1, "STATE")
+    return tuple(header)
+
+
+def col_attr(heading: str) -> str:
+    """The class that hides a dropdown's column while it shows one value."""
+    key = heading.lower()
+    return f' class="col-{key}"' if key in {k for k, *_ in PR_SELECTS} else ""
+
+
+def header_row(header: tuple, blank: int = 0) -> str:
+    return "<tr>" + "".join(f"<th{col_attr(h)}>{h}</th>" for h in header) + "<th></th>" * blank + "</tr>"
 
 
 def pr_form(action: str, label: str, repo: str, number: int) -> str:
@@ -179,10 +220,21 @@ def hide_attr(item: dict, filters: tuple) -> str:
     return f' data-hide="{" ".join(keys)}"' if keys else ""
 
 
-def section(table: str, heading: str, filters: tuple, rows: list[str], search: bool = False) -> list[str]:
-    """The heading with its refresh link, filter checkboxes, and (if search) a search box
-    matching rows' data-search; the caller adds the table."""
-    boxes = "".join(
+def select_html(key: str, options: tuple, default: str) -> str:
+    choices = "".join(
+        f'<option value="{o}"{" selected" if o == default else ""}>{o}</option>'
+        for o in (SELECT_ALL, *options)
+    )
+    return f'<label>{key} <select name="{key}" data-default="{default}">{choices}</select></label>'
+
+
+def section(
+    table: str, heading: str, filters: tuple, rows: list[str], search: bool = False, selects: tuple = ()
+) -> list[str]:
+    """The heading with its refresh link, filter dropdowns and checkboxes, and (if search) a
+    search box matching rows' data-search; the caller adds the table."""
+    boxes = "".join(select_html(key, options, default) for key, options, default, _ in selects)
+    boxes += "".join(
         f'<label><input type="checkbox" name="{key}" checked> {html.escape(label)}</label>'
         for key, label, _ in filters
     )
@@ -201,7 +253,7 @@ def section(table: str, heading: str, filters: tuple, rows: list[str], search: b
 
 def empty_row(header: tuple, colspan: int, message: str) -> list[str]:
     return [
-        "<tr>" + "".join(f"<th>{h}</th>" for h in header) + "<th></th>" * (colspan - len(header)) + "</tr>",
+        header_row(header, colspan - len(header)),
         f'<tr><td class="empty" colspan={colspan}>{html.escape(message)}</td></tr>',
     ]
 
@@ -220,30 +272,34 @@ def pr_table(table: str, heading: str, prs: list[dict] | str | None) -> str:
         else:
             message = f"github: {prs}" if prs else pr.EMPTY[mine]
         rows = empty_row(header, colspan, message)
-        return "\n".join(section(table, heading, PR_FILTERS, rows, search=True))
-    out = ["<tr>" + "".join(f"<th>{h}</th>" for h in header) + "<th></th></tr>"]
+        return "\n".join(section(table, heading, PR_FILTERS, rows, search=True, selects=PR_SELECTS))
+    out = [header_row(header, 1)]
     for p in prs:
         url = html.escape(pr.pr_url(p["repo"], p["number"]))
         repo = html.escape(p["repo"])
         forms = [pr_form("review", "review", repo, p["number"])]
         if mine:
             forms += [pr_form(a, MINE_BUTTONS[a], repo, p["number"]) for a in mine_actions(p)]
-        cells = [
-            f'<a href="{url}" target="_blank">#{p["number"]}</a>',
-            repo,
-            *([] if mine else [html.escape(p["author"])]),
-            html.escape(p["checks"]),
-            html.escape(p["title"]),
-            '<div class="actions">' + "".join(forms) + "</div>",
-        ]
-        # what the search box matches, case-insensitively
+        values = {key: value(p) for key, _, _, value in PR_SELECTS}
+        cells = {
+            "PR": f'<a href="{url}" target="_blank">#{p["number"]}</a>',
+            "REPO": repo,
+            "AUTHOR": html.escape(p["author"]),
+            "CHECKS": html.escape(p["checks"]),
+            "STATE": values["state"],
+            "TITLE": html.escape(p["title"]),
+        }
+        actions = '<td><div class="actions">' + "".join(forms) + "</div></td>"
+        # what the search box matches, case-insensitively, and each dropdown's value
         search = html.escape(f"{p['repo']} {p['title']}".lower())
+        data = "".join(f' data-{key}="{html.escape(v)}"' for key, v in values.items())
         out.append(
-            f'<tr class="pr" data-search="{search}"{hide_attr(p, PR_FILTERS)}>'
-            + "".join(f"<td>{c}</td>" for c in cells)
+            f'<tr class="pr" data-search="{search}"{data}{hide_attr(p, PR_FILTERS)}>'
+            + "".join(f"<td{col_attr(h)}>{cells[h]}</td>" for h in header)
+            + actions
             + "</tr>"
         )
-    return "\n".join(section(table, heading, PR_FILTERS, out, search=True))
+    return "\n".join(section(table, heading, PR_FILTERS, out, search=True, selects=PR_SELECTS))
 
 
 ISSUE_HEADER = ("ISSUE", "TYPE", "SUMMARY")

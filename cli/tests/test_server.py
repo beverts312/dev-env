@@ -30,13 +30,22 @@ def test_render_page_marks_rows_for_filters():
     page = server.render_page({"review": PRS, "mine": []})
     # every row is rendered; the checkboxes hide them in the page
     assert page.count('<tr class="pr"') == 4
-    # #7 passes every filter, and the search box matches its repo and title, lowercased
-    assert '<tr class="pr" data-search="acme/api fix &lt;login&gt;">' in page
+    # the search box matches the repo and title, lowercased, and the dropdowns each value
+    assert '<tr class="pr" data-search="acme/api fix &lt;login&gt;" data-checks="pass" data-state="ready">' in page
+    assert 'data-checks="fail" data-state="ready">' in page
+    assert 'data-checks="pass" data-state="draft">' in page
     assert page.count('type="search"') == 2
-    assert 'data-hide="checks"' in page
-    assert 'data-hide="draft"' in page
     assert 'data-hide="renovate"' in page
     assert page.count('type="checkbox"') == 2 * len(server.PR_FILTERS) + len(server.ISSUE_FILTERS)
+    # dropdowns default to what pr ls shows
+    assert page.count('<select name="checks" data-default="pass">') == 2
+    assert page.count('<select name="state" data-default="ready">') == 2
+    assert page.count('<option value="pass" selected>') == 2
+    assert page.count('<option value="all">') == 4
+    # their columns can be hidden, and the CSS hides them
+    assert page.count('<th class="col-checks">CHECKS</th>') == 2
+    assert page.count('<td class="col-state">draft</td>') == 1
+    assert ".hide-checks .col-checks { display: none; }" in page
     assert "no open PRs by you" in page
     # titles are escaped
     assert "Fix &lt;login&gt;" in page and "<login>" not in page
