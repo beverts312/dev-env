@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import logging
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlencode, urlparse
 
@@ -12,6 +13,10 @@ from be import config, jira
 from be.commands import jira as jira_command
 from be.commands import pr
 from be.github import same_login
+
+log = logging.getLogger(__name__)
+
+LOG_LEVELS = ("debug", "info", "warning", "error")
 
 # (id, heading) for each table, in page order
 TABLES = (("review", "review requests"), ("mine", "your PRs"), ("jira", "jira issues"))
@@ -417,14 +422,21 @@ def render_page(loaded: dict[str, list[dict] | str], message: str = "") -> str:
 
 def fetch_table(table: str) -> list[dict] | str:
     """The table's rows, or the error message from looking them up."""
+    log.debug("fetching %s", table)
     try:
         if table == "jira":
-            return jira.in_progress_issues()
-        return pr.fetch_prs(MINE[table])
+            rows = jira.in_progress_issues()
+        else:
+            rows = pr.fetch_prs(MINE[table])
     except click.ClickException as e:
-        return e.format_message()
+        message = e.format_message()
     except jira.JiraError as e:
-        return str(e)
+        message = str(e)
+    else:
+        log.info("fetched %d rows for %s", len(rows), table)
+        return rows
+    log.warning("fetching %s failed: %s", table, message)
+    return message
 
 
 def make_handler(parent: str | None) -> type[BaseHTTPRequestHandler]:
@@ -433,7 +445,7 @@ def make_handler(parent: str | None) -> type[BaseHTTPRequestHandler]:
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args) -> None:
-            pass
+            log.info("%s %s", self.address_string(), format % args)
 
         def redirect(self, message: str = "") -> None:
             self.send_response(303)
@@ -482,8 +494,10 @@ def make_handler(parent: str | None) -> type[BaseHTTPRequestHandler]:
             try:
                 pr.open_review(repo, int(number), parent)
             except click.ClickException as e:
+                log.warning("reviewing %s#%s failed: %s", repo, number, e.format_message())
                 self.redirect(f"{repo}#{number}: {e.format_message()}")
                 return
+            log.info("opened %s#%s for review", repo, number)
             self.redirect(f"opened {repo}#{number}")
 
         def mine_prs(self) -> list[dict]:
@@ -502,7 +516,9 @@ def make_handler(parent: str | None) -> type[BaseHTTPRequestHandler]:
             try:
                 message = pr.run_mine_action(action, found[0])
             except click.ClickException as e:
+                log.warning("%s on %s#%s failed: %s", action, repo, number, e.format_message())
                 return f"{repo}#{number}: {e.format_message()}"
+            log.info("%s#%s: %s", repo, number, message)
             # run_mine_action updates the row in place rather than us refetching
             # the table, so a PR marked ready offers auto-merge next, and one set
             # to auto-merge offers nothing; a merged one is dropped
@@ -537,7 +553,13 @@ def make_handler(parent: str | None) -> type[BaseHTTPRequestHandler]:
 @click.option("--host", default="127.0.0.1", show_default=True, help="Address to listen on.")
 @click.option("--port", default=8765, show_default=True, help="Port to listen on.")
 @click.option("--no-open", is_flag=True, help="Don't open the page in a browser.")
-def server(parent: str | None, host: str, port: int, no_open: bool) -> None:
+@config.option(
+    "server.log_level",
+    "--log-level",
+    type=click.Choice(LOG_LEVELS, case_sensitive=False),
+    help="Log requests (info), fetches and gh calls (debug), and failures and retries (warning).",
+)
+def server(parent: str | None, host: str, port: int, no_open: bool, log_level: str) -> None:
     """Serve a web page with the `pr ls` tables and the `jira ls` table.
 
     Each PR can be reviewed (as `pr review`) or opened on GitHub, and each of
@@ -546,6 +568,9 @@ def server(parent: str | None, host: str, port: int, no_open: bool) -> None:
     opened in Jira. Each table loads when you click its refresh link, and its
     filter checkboxes apply in the page. Ctrl-C stops it.
     """
+    logging.basicConfig(format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    # only be's own loggers, so --log-level debug doesn't turn on libraries' debug output
+    logging.getLogger("be").setLevel(log_level.upper())
     httpd = HTTPServer((host, port), make_handler(parent))
     url = f"http://{host}:{httpd.server_port}"
     click.echo(f"serving on {url}")

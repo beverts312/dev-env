@@ -5,6 +5,7 @@ from http.server import HTTPServer
 from urllib.parse import urlencode
 
 import click
+from click.testing import CliRunner
 import pytest
 
 from be import jira
@@ -309,3 +310,52 @@ def test_post_bulk_bad_input(serve):
     for action, prs in (("nope", ["acme/api#7"]), ("ready", ["acme/api#x"]), ("ready", ["#7"])):
         with pytest.raises(urllib.error.HTTPError):
             post_bulk(base, action, *prs)
+
+
+def test_requests_and_fetches_are_logged(serve, caplog):
+    base, _, _, _ = serve
+    caplog.set_level("INFO", logger="be")
+    get(base + "/refresh?table=review")
+    messages = [r.getMessage() for r in caplog.records]
+    assert "fetched 4 rows for review" in messages
+    assert any("GET /refresh?table=review" in m for m in messages)
+
+
+def test_failed_fetch_is_logged_as_warning(monkeypatch, caplog):
+    def fail(mine):
+        raise click.ClickException("gh api graphql failed: boom")
+
+    monkeypatch.setattr(pr, "fetch_prs", fail)
+    assert server.fetch_table("mine") == "gh api graphql failed: boom"
+    assert [(r.levelname, r.getMessage()) for r in caplog.records] == [
+        ("WARNING", "fetching mine failed: gh api graphql failed: boom")
+    ]
+
+
+@pytest.mark.parametrize(
+    "args, env, level",
+    [([], {}, "WARNING"), (["--log-level", "DEBUG"], {}, "DEBUG"), ([], {"BE_SERVER_LOG_LEVEL": "info"}, "INFO")],
+)
+def test_log_level_option(monkeypatch, args, env, level):
+
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+
+    class Stopped(Exception):
+        pass
+
+    def stop(*a, **kw):
+        raise Stopped
+
+    monkeypatch.setattr(server, "HTTPServer", stop)
+    logger = server.logging.getLogger("be")
+    monkeypatch.setattr(logger, "level", logger.level)
+    result = CliRunner().invoke(server.server, ["--no-open", *args])
+    assert isinstance(result.exception, Stopped)
+    assert server.logging.getLevelName(logger.level) == level
+
+
+def test_log_level_rejects_unknown_levels():
+
+    result = CliRunner().invoke(server.server, ["--no-open", "--log-level", "loud"])
+    assert result.exit_code == 2 and "loud" in result.output

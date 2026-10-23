@@ -51,6 +51,12 @@ SETTINGS = {
             "BE_CMUX_WINDOW",
             "cmux window for new workspaces: pick, or a window index, ref or UUID",
         ),
+        Setting(
+            "server.log_level",
+            "BE_SERVER_LOG_LEVEL",
+            "`be server` log level: debug, info, warning or error",
+            "warning",
+        ),
         Setting("cloudflare.account_id", "CLOUDFLARE_ACCOUNT_ID", "Cloudflare account for new zones"),
         Setting("jira.url", "JIRA_URL", "Base URL of the Jira site"),
         Setting("jira.email", "JIRA_EMAIL", "Atlassian account email for the Jira API"),

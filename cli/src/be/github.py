@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 import time
 from pathlib import Path
 
 import click
+
+log = logging.getLogger(__name__)
 
 
 def repo_slug(name: str, org: str | None) -> str:
@@ -70,13 +73,14 @@ def retryable(result: subprocess.CompletedProcess) -> bool:
 def run_gh(*args: str) -> subprocess.CompletedProcess:
     """Run gh, waiting and retrying while GitHub reports a rate limit or a gateway error."""
     for delay in (*RETRY_DELAYS, None):
+        log.debug("running gh %s", " ".join(args[:2]))
         try:
             result = subprocess.run(["gh", *args], capture_output=True, text=True)
         except FileNotFoundError:
             raise click.ClickException("gh not found; install the GitHub CLI") from None
         if result.returncode == 0 or delay is None or not retryable(result):
             return result
-        click.echo(f"GitHub: {result.stderr.strip()}; retrying in {delay}s", err=True)
+        log.warning("GitHub: %s; retrying in %ss", result.stderr.strip(), delay)
         time.sleep(delay)
 
 
