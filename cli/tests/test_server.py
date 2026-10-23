@@ -30,7 +30,9 @@ def test_render_page_marks_rows_for_filters():
     page = server.render_page({"review": PRS, "mine": []})
     # every row is rendered; the checkboxes hide them in the page
     assert page.count('<tr class="pr"') == 4
-    assert '<tr class="pr">' in page  # #7 passes every filter
+    # #7 passes every filter, and the search box matches its repo and title, lowercased
+    assert '<tr class="pr" data-search="acme/api fix &lt;login&gt;">' in page
+    assert page.count('type="search"') == 2
     assert 'data-hide="checks"' in page
     assert 'data-hide="draft"' in page
     assert 'data-hide="renovate"' in page

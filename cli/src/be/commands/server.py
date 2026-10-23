@@ -39,7 +39,7 @@ tr.selected { background: #dde8ff; }
 tr.filtered { display: none; }
 form { margin: 0; }
 .actions { display: flex; gap: 4px; }
-.filters { display: flex; gap: 12px; margin-bottom: 8px; }
+.filters { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
 .msg { padding: 4px 8px; background: #eee; }
 .keys, .empty { color: #666; }
 @media (prefers-color-scheme: dark) {
@@ -57,13 +57,16 @@ SCRIPT = """
 const sections = [...document.querySelectorAll("section")];
 let t = 0, r = 0;
 const rows = () => [...sections[t].querySelectorAll("tr.pr:not(.filtered), tr.issue:not(.filtered)")];
-const boxes = s => [...s.querySelectorAll(".filters input")];
+const boxes = s => [...s.querySelectorAll(".filters input[type=checkbox]")];
 const storeKey = (s, box) => `be.filter.${s.dataset.table}.${box.name}`;
 function applyFilters(s) {
   const on = boxes(s).filter(b => b.checked).map(b => b.name);
+  const search = s.querySelector(".filters input[type=search]");
+  const text = search ? search.value.trim().toLowerCase() : "";
   let hidden = 0;
   s.querySelectorAll("tr.pr, tr.issue").forEach(row => {
-    const hide = (row.dataset.hide || "").split(" ").some(k => on.includes(k));
+    const hide = (row.dataset.hide || "").split(" ").some(k => on.includes(k))
+      || (text !== "" && !(row.dataset.search || "").includes(text));
     row.classList.toggle("filtered", hide);
     hidden += hide;
   });
@@ -85,10 +88,30 @@ sections.forEach(s => {
       draw();
     });
   });
+  const search = s.querySelector(".filters input[type=search]");
+  if (search) {
+    try { search.value = localStorage.getItem(storeKey(s, search)) || ""; } catch {}
+    search.addEventListener("input", () => {
+      try { localStorage.setItem(storeKey(s, search), search.value); } catch {}
+      applyFilters(s);
+      r = 0;
+      draw();
+    });
+  }
   applyFilters(s);
 });
 document.addEventListener("keydown", e => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
+  // typing in the search box doesn't trigger keys; escape or enter goes back to the rows
+  if (e.target.type === "search") {
+    if (e.key === "Escape" || e.key === "Enter") { e.target.blur(); e.preventDefault(); }
+    return;
+  }
+  if (e.key === "/") {
+    const search = sections[t].querySelector(".filters input[type=search]");
+    if (search) { search.focus(); e.preventDefault(); }
+    return;
+  }
   const row = rows()[r];
   if (e.key === "ArrowDown" || e.key === "j") r = Math.min(r + 1, rows().length - 1);
   else if (e.key === "ArrowUp" || e.key === "k") r = Math.max(r - 1, 0);
@@ -138,12 +161,15 @@ def hide_attr(item: dict, filters: tuple) -> str:
     return f' data-hide="{" ".join(keys)}"' if keys else ""
 
 
-def section(table: str, heading: str, filters: tuple, rows: list[str]) -> list[str]:
-    """The heading with its refresh link and filter checkboxes; the caller adds the table."""
+def section(table: str, heading: str, filters: tuple, rows: list[str], search: bool = False) -> list[str]:
+    """The heading with its refresh link, filter checkboxes, and (if search) a search box
+    matching rows' data-search; the caller adds the table."""
     boxes = "".join(
         f'<label><input type="checkbox" name="{key}" checked> {html.escape(label)}</label>'
         for key, label, _ in filters
     )
+    if search:
+        boxes += '<input type="search" name="search" placeholder="repo or title" aria-label="search repo or title">'
     return [
         f'<section data-table="{table}">',
         f'<h2>{html.escape(heading)}<span class="hidden-count"></span>'
@@ -174,7 +200,8 @@ def pr_table(table: str, heading: str, prs: list[dict] | str | None) -> str:
             message = NOT_LOADED
         else:
             message = f"github: {prs}" if prs else pr.EMPTY[mine]
-        return "\n".join(section(table, heading, PR_FILTERS, empty_row(pr.PR_HEADER, colspan, message)))
+        rows = empty_row(pr.PR_HEADER, colspan, message)
+        return "\n".join(section(table, heading, PR_FILTERS, rows, search=True))
     out = ["<tr>" + "".join(f"<th>{h}</th>" for h in pr.PR_HEADER) + "<th></th></tr>"]
     for p in prs:
         url = html.escape(pr.pr_url(p["repo"], p["number"]))
@@ -192,10 +219,14 @@ def pr_table(table: str, heading: str, prs: list[dict] | str | None) -> str:
             html.escape(p["title"]),
             '<div class="actions">' + "".join(forms) + "</div>",
         ]
+        # what the search box matches, case-insensitively
+        search = html.escape(f"{p['repo']} {p['title']}".lower())
         out.append(
-            f'<tr class="pr"{hide_attr(p, PR_FILTERS)}>' + "".join(f"<td>{c}</td>" for c in cells) + "</tr>"
+            f'<tr class="pr" data-search="{search}"{hide_attr(p, PR_FILTERS)}>'
+            + "".join(f"<td>{c}</td>" for c in cells)
+            + "</tr>"
         )
-    return "\n".join(section(table, heading, PR_FILTERS, out))
+    return "\n".join(section(table, heading, PR_FILTERS, out, search=True))
 
 
 ISSUE_HEADER = ("ISSUE", "TYPE", "SUMMARY")
@@ -232,7 +263,7 @@ def render_page(loaded: dict[str, list[dict] | str], message: str = "") -> str:
         "<!doctype html><html><head><meta charset=utf-8>",
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         f"<title>be</title><style>{STYLE}</style></head><body>",
-        '<p class="keys">j/k move · enter review or open issue · o open in browser · r mark your draft ready · u enable auto-merge on your PR · m switch table · a toggle filters</p>',
+        '<p class="keys">j/k move · enter review or open issue · o open in browser · r mark your draft ready · u enable auto-merge on your PR · m switch table · a toggle filters · / search repo or title</p>',
     ]
     if message:
         parts.append(f'<p class="msg">{html.escape(message)}</p>')
