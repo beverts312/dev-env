@@ -11,10 +11,10 @@ from be.cli import cli
 from be.commands import pr
 
 PRS = [
-    {"number": 7, "repo": "acme/api", "title": "Fix login", "checks": "pass", "draft": False, "author": "dev", "approved": False, "auto_merge": False},
-    {"number": 1234, "repo": "acme/web-app", "title": "Add page", "checks": "fail", "draft": False, "author": "dev", "approved": False, "auto_merge": False},
-    {"number": 9, "repo": "acme/api", "title": "WIP", "checks": "pass", "draft": True, "author": "dev", "approved": False, "auto_merge": False},
-    {"number": 5, "repo": "acme/api", "title": "Bump", "checks": "pass", "draft": False, "author": "renovate", "approved": False, "auto_merge": False},
+    {"number": 7, "repo": "acme/api", "title": "Fix login", "checks": "pass", "approvals": 2, "draft": False, "author": "dev", "approved": False, "auto_merge": False},
+    {"number": 1234, "repo": "acme/web-app", "title": "Add page", "checks": "fail", "approvals": 0, "draft": False, "author": "dev", "approved": False, "auto_merge": False},
+    {"number": 9, "repo": "acme/api", "title": "WIP", "checks": "pass", "approvals": 0, "draft": True, "author": "dev", "approved": False, "auto_merge": False},
+    {"number": 5, "repo": "acme/api", "title": "Bump", "checks": "pass", "approvals": 0, "draft": False, "author": "renovate", "approved": False, "auto_merge": False},
 ]
 
 
@@ -30,6 +30,7 @@ def test_review_requests_parses_graphql(monkeypatch):
             "title": f"t{number}",
             "repository": {"nameWithOwner": repo},
             "commits": {"nodes": commits},
+            "latestOpinionatedReviews": {"nodes": [{"state": "APPROVED"}] * (number % 3) + [{"state": "CHANGES_REQUESTED"}]},
         }
 
     nodes = [node("b/x", 2, "FAILURE"), node("a/y", 9, None), {}, node("a/y", 3, "PENDING")]
@@ -38,12 +39,12 @@ def test_review_requests_parses_graphql(monkeypatch):
         subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, stdout=out)
     )
     assert [
-        (p["repo"], p["number"], p["checks"], p["draft"], p["author"], p["approved"], p["auto_merge"])
+        (p["repo"], p["number"], p["checks"], p["approvals"], p["draft"], p["author"], p["approved"], p["auto_merge"])
         for p in github.review_requests()
     ] == [
-        ("a/y", 3, "pending", False, "", True, False),
-        ("a/y", 9, "none", True, "", False, False),
-        ("b/x", 2, "fail", False, "renovate", False, True),
+        ("a/y", 3, "pending", 0, False, "", True, False),
+        ("a/y", 9, "none", 0, True, "", False, False),
+        ("b/x", 2, "fail", 2, False, "renovate", False, True),
     ]
 
 
@@ -52,11 +53,11 @@ def test_pr_ls_table(monkeypatch):
     result = CliRunner().invoke(cli, ["pr", "ls", "--all"])
     assert result.exit_code == 0, result.output
     assert result.output.splitlines() == [
-        "PR     REPO          AUTHOR    CHECKS  TITLE",
-        "#7     acme/api      dev       pass    Fix login",
-        "#1234  acme/web-app  dev       fail    Add page",
-        "#9     acme/api      dev       pass    WIP",
-        "#5     acme/api      renovate  pass    Bump",
+        "PR     REPO          AUTHOR    CHECKS  APPROVALS  DRAFT  TITLE",
+        "#7     acme/api      dev       pass    2          no     Fix login",
+        "#1234  acme/web-app  dev       fail    0          no     Add page",
+        "#9     acme/api      dev       pass    0          yes    WIP",
+        "#5     acme/api      renovate  pass    0          no     Bump",
     ]
 
 
@@ -66,8 +67,8 @@ def test_pr_ls_defaults_to_ready_and_passing(monkeypatch):
     assert result.exit_code == 0, result.output
     assert result.output.splitlines() == [
         "3 hidden (draft, not passing, or by renovate); --all shows them",
-        "PR  REPO      AUTHOR  CHECKS  TITLE",
-        "#7  acme/api  dev     pass    Fix login",
+        "PR  REPO      AUTHOR  CHECKS  APPROVALS  TITLE",
+        "#7  acme/api  dev     pass    2          Fix login",
     ]
 
 
@@ -126,8 +127,8 @@ def test_pr_ls_mine_is_filtered(monkeypatch):
     assert result.exit_code == 0, result.output
     assert result.output.splitlines() == [
         "3 hidden (draft, not passing, or by renovate); --all shows them",
-        "PR  REPO      AUTHOR  CHECKS  TITLE",
-        "#7  acme/api  dev     pass    Fix login",
+        "PR  REPO      AUTHOR  CHECKS  APPROVALS  TITLE",
+        "#7  acme/api  dev     pass    2          Fix login",
     ]
     result = CliRunner().invoke(cli, ["pr", "ls", "-m", "-a"])
     assert len(result.output.splitlines()) == 5

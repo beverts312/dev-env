@@ -11,10 +11,10 @@ from be import jira
 from be.commands import pr, server
 
 PRS = [
-    {"number": 7, "repo": "acme/api", "title": "Fix <login>", "checks": "pass", "draft": False, "author": "dev", "approved": False, "auto_merge": False},
-    {"number": 1234, "repo": "acme/web-app", "title": "Add page", "checks": "fail", "draft": False, "author": "dev", "approved": False, "auto_merge": False},
-    {"number": 9, "repo": "acme/api", "title": "WIP", "checks": "pass", "draft": True, "author": "dev", "approved": False, "auto_merge": False},
-    {"number": 5, "repo": "acme/api", "title": "Bump", "checks": "pass", "draft": False, "author": "renovate", "approved": False, "auto_merge": False},
+    {"number": 7, "repo": "acme/api", "title": "Fix <login>", "checks": "pass", "approvals": 2, "draft": False, "author": "dev", "approved": False, "auto_merge": False},
+    {"number": 1234, "repo": "acme/web-app", "title": "Add page", "checks": "fail", "approvals": 0, "draft": False, "author": "dev", "approved": False, "auto_merge": False},
+    {"number": 9, "repo": "acme/api", "title": "WIP", "checks": "pass", "approvals": 0, "draft": True, "author": "dev", "approved": False, "auto_merge": False},
+    {"number": 5, "repo": "acme/api", "title": "Bump", "checks": "pass", "approvals": 0, "draft": False, "author": "renovate", "approved": False, "auto_merge": False},
 ]
 
 
@@ -31,24 +31,27 @@ def test_render_page_marks_rows_for_filters():
     # every row is rendered; the checkboxes hide them in the page
     assert page.count('<tr class="pr"') == 4
     # the search box matches the repo and title, lowercased, and the dropdowns each value
-    assert '<tr class="pr" data-search="acme/api fix &lt;login&gt;" data-checks="pass" data-state="ready">' in page
-    assert 'data-checks="fail" data-state="ready">' in page
-    assert 'data-checks="pass" data-state="draft">' in page
+    assert '<tr class="pr" data-search="acme/api fix &lt;login&gt;" data-checks="pass" data-draft="no">' in page
+    assert 'data-checks="fail" data-draft="no">' in page
+    assert 'data-checks="pass" data-draft="yes">' in page
     assert page.count('type="search"') == 2
     assert 'data-hide="renovate"' in page
     assert page.count('type="checkbox"') == 2 * len(server.PR_FILTERS) + len(server.ISSUE_FILTERS)
     # dropdowns default to what pr ls shows
     assert page.count('<select name="checks" data-default="pass">') == 2
-    assert page.count('<select name="state" data-default="ready">') == 2
+    assert page.count('<select name="draft" data-default="no">') == 2
     assert page.count('<option value="pass" selected>') == 2
     assert page.count('<option value="all">') == 4
     # their columns can be hidden, and the CSS hides them
     assert page.count('<th class="col-checks">CHECKS</th>') == 2
-    assert page.count('<td class="col-state">draft</td>') == 1
     assert ".hide-checks .col-checks { display: none; }" in page
     assert "no open PRs by you" in page
     # titles are escaped
     assert "Fix &lt;login&gt;" in page and "<login>" not in page
+    # the draft column is always rendered; the page hides it while the dropdown picks one value
+    assert page.count('<th class="col-draft">DRAFT</th>') == 2
+    assert page.count('<td class="col-draft">yes</td>') == 1
+    assert page.count('<td class="col-draft">no</td>') == 3
 
 
 ISSUES = [

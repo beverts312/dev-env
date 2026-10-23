@@ -60,6 +60,7 @@ query($q: String!) {
         author { login }
         repository { nameWithOwner }
         commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+        latestOpinionatedReviews(first: 100) { nodes { state } }
       }
     }
   }
@@ -86,8 +87,8 @@ def authored_prs() -> list[dict]:
 
 
 def search_prs(qualifier: str) -> list[dict]:
-    """Open PRs matching qualifier: number, repo, title, checks, draft, author, whether
-    it's approved, and whether auto-merge is enabled."""
+    """Open PRs matching qualifier: number, repo, title, checks, approvals, draft, author,
+    whether it's approved, and whether auto-merge is enabled."""
     query = f"is:pr is:open archived:false {qualifier}"
     try:
         result = subprocess.run(
@@ -110,12 +111,15 @@ def search_prs(qualifier: str) -> list[dict]:
         commits = node["commits"]["nodes"]
         rollup = commits[0]["commit"]["statusCheckRollup"] if commits else None
         state = rollup["state"] if rollup else None
+        # each reviewer's latest approve or request-changes review, so a retracted approval doesn't count
+        reviews = (node.get("latestOpinionatedReviews") or {}).get("nodes") or []
         prs.append(
             {
                 "number": node["number"],
                 "repo": node["repository"]["nameWithOwner"],
                 "title": node["title"],
                 "checks": CHECK_STATES.get(state, "none"),
+                "approvals": sum(1 for r in reviews if r and r["state"] == "APPROVED"),
                 "draft": bool(node.get("isDraft")),
                 "author": (node.get("author") or {}).get("login", ""),
                 "approved": node.get("reviewDecision") == "APPROVED",

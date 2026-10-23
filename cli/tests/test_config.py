@@ -1,8 +1,11 @@
 import subprocess
 import tomllib
 
+import click
+import pytest
 from click.testing import CliRunner
 
+from be import config
 from be.cli import cli
 
 
@@ -145,3 +148,33 @@ def test_list_masks_secrets_and_init_is_private(isolated_config):
     isolated_config.unlink()
     assert run("config", "init").exit_code == 0
     assert isolated_config.stat().st_mode & 0o777 == 0o600
+
+
+def tty(monkeypatch, on: bool) -> None:
+    monkeypatch.setattr(config, "in_terminal", lambda: on)
+
+
+def test_interactive_flag_wins(monkeypatch):
+    monkeypatch.setenv("BE_INTERACTIVE", "true")
+    tty(monkeypatch, True)
+    assert config.interactive(False) is False
+    assert config.interactive(True) is True
+
+
+def test_interactive_setting_needs_a_terminal(monkeypatch):
+    monkeypatch.setenv("BE_INTERACTIVE", "yes")
+    tty(monkeypatch, True)
+    assert config.interactive(None) is True
+    tty(monkeypatch, False)
+    assert config.interactive(None) is False
+
+
+def test_interactive_defaults_off(monkeypatch):
+    tty(monkeypatch, True)
+    assert config.interactive(None) is False
+
+
+def test_interactive_rejects_other_values(monkeypatch):
+    monkeypatch.setenv("BE_INTERACTIVE", "sometimes")
+    with pytest.raises(click.ClickException, match="must be true or false"):
+        config.interactive(None)

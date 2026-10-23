@@ -430,11 +430,8 @@ def build_layout(root: Path, repos: list[str], extra_dirs: list[Path], model: st
 @config.option(
     "cmux.window", "--window", help="cmux window to open in: pick, or an index, ref or UUID."
 )
-@click.option(
-    "-i",
-    "--interactive",
-    is_flag=True,
-    help="Prompt for the name, repos, extra dirs and description.",
+@config.interactive_option(
+    "Prompt for the name, repos, extra dirs and description; by default only without WORK_DIR."
 )
 def create(
     work_dir: str | None,
@@ -445,9 +442,13 @@ def create(
     model: str,
     org: str | None,
     window: str | None,
-    interactive: bool,
+    interactive: bool | None,
 ) -> None:
     """Clone REPOS (comma separated) into WORK_DIR and open a cmux workspace."""
+    # the setting only fills in a missing WORK_DIR, so scripted creates don't prompt
+    if interactive is None and work_dir:
+        interactive = False
+    interactive = config.interactive(interactive)
     if interactive:
         work_dir, repos, extra_dirs, description = prompt_create(
             work_dir, repos, extra_dirs, description
@@ -528,14 +529,13 @@ def get_workspace(name: str, parent: str | None) -> None:
     "parent",
     help="Directory that holds the workspaces.",
 )
-@click.option(
-    "-i", "--interactive", is_flag=True, help="Select a workspace; enter opens it, g shows it."
-)
+@config.interactive_option("Select a workspace; enter opens it, g shows it.")
 @config.option(
     "cmux.window", "--window", help="cmux window to open in: pick, or an index, ref or UUID."
 )
-def list_workspaces(parent: str | None, interactive: bool, window: str | None) -> None:
+def list_workspaces(parent: str | None, interactive: bool | None, window: str | None) -> None:
     """List workspaces. Also available as ls."""
+    interactive = config.interactive(interactive)
     entries = workspace_entries(parent)
     if not interactive:
         for entry in entries:

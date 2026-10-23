@@ -23,7 +23,7 @@ MINE = {"review": False, "mine": True}
 # while one option is chosen the key's column is hidden, as every row would show it
 PR_SELECTS = (
     ("checks", ("pass", "fail", "pending", "none"), "pass", lambda p: p["checks"]),
-    ("state", ("ready", "draft"), "ready", lambda p: "draft" if p["draft"] else "ready"),
+    ("draft", ("no", "yes"), "no", lambda p: "yes" if p["draft"] else "no"),
 )
 SELECT_ALL = "all"
 
@@ -188,11 +188,8 @@ def mine_actions(p: dict) -> list[str]:
 
 
 def pr_header(mine: bool) -> tuple[str, ...]:
-    """pr.PR_HEADER with a draft/ready state column, without the author on your PRs,
-    which are all yours."""
-    header = [h for h in pr.PR_HEADER if not (mine and h == "AUTHOR")]
-    header.insert(header.index("CHECKS") + 1, "STATE")
-    return tuple(header)
+    """pr.pr_header with the draft column, without the author on your PRs, which are all yours."""
+    return tuple(h for h in pr.pr_header(drafts=True) if not (mine and h == "AUTHOR"))
 
 
 def col_attr(heading: str) -> str:
@@ -281,14 +278,8 @@ def pr_table(table: str, heading: str, prs: list[dict] | str | None) -> str:
         if mine:
             forms += [pr_form(a, MINE_BUTTONS[a], repo, p["number"]) for a in mine_actions(p)]
         values = {key: value(p) for key, _, _, value in PR_SELECTS}
-        cells = {
-            "PR": f'<a href="{url}" target="_blank">#{p["number"]}</a>',
-            "REPO": repo,
-            "AUTHOR": html.escape(p["author"]),
-            "CHECKS": html.escape(p["checks"]),
-            "STATE": values["state"],
-            "TITLE": html.escape(p["title"]),
-        }
+        cells = dict(zip(pr.pr_header(drafts=True), (html.escape(c) for c in pr.pr_cells(p, drafts=True))))
+        cells["PR"] = f'<a href="{url}" target="_blank">{cells["PR"]}</a>'
         actions = '<td><div class="actions">' + "".join(forms) + "</div></td>"
         # what the search box matches, case-insensitively, and each dropdown's value
         search = html.escape(f"{p['repo']} {p['title']}".lower())

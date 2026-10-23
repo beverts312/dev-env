@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import click
 
-from be import jira
+from be import config, jira
 from be.commands.ws import choose
 
 EMPTY = "no in progress issues assigned to you"
@@ -39,18 +39,14 @@ def hidden_note(hidden: int) -> str:
 
 
 @jira_group.command(name="list")
-@click.option(
-    "-i",
-    "--interactive",
-    is_flag=True,
-    help="Select an issue; enter opens it in the browser, a toggles --all.",
-)
+@config.interactive_option("Select an issue; enter opens it in the browser, a toggles --all.")
 @click.option("-a", "--all", "show_all", is_flag=True, help="Include issues whose type is Feature.")
-def list_issues(interactive: bool, show_all: bool) -> None:
+def list_issues(interactive: bool | None, show_all: bool) -> None:
     """List in progress issues assigned to you. Also available as ls.
 
     Features are hidden unless you pass --all.
     """
+    interactive = config.interactive(interactive)
     try:
         fetched = jira.in_progress_issues()
     except jira.JiraError as e:
