@@ -88,39 +88,15 @@ def get(key: str, source: bool) -> None:
 @click.argument("value")
 def set_(key: str, value: str) -> None:
     """Write KEY = VALUE to the config file. Map entries are set as KEY.NAME."""
-    s = config.setting(key)
-    if s.kind == "map" and key == s.key:
-        raise click.BadParameter(f"{key} is a map; set entries with {key}.<name>")
-    data = config.load_file()
-    *tables, name = key.split(".")
-    node = data
-    for table in tables:
-        node = node.setdefault(table, {})
-    node[name] = value
-    config.save_file(data)
-    if os.environ.get(s.env):
-        click.echo(f"warning: {s.env} is set and overrides this value", err=True)
+    if config.set_value(key, value):
+        click.echo(f"warning: {config.setting(key).env} is set and overrides this value", err=True)
 
 
 @config_group.command()
 @key_argument
 def unset(key: str) -> None:
     """Remove KEY from the config file."""
-    config.setting(key)
-    data = config.load_file()
-    *tables, name = key.split(".")
-    parents = [data]
-    for table in tables:
-        child = parents[-1].get(table)
-        if not isinstance(child, dict):
-            return
-        parents.append(child)
-    parents[-1].pop(name, None)
-    for table, parent in zip(reversed(tables), reversed(parents[:-1])):
-        if parent[table]:
-            break
-        del parent[table]
-    config.save_file(data)
+    config.unset_value(key)
 
 
 @config_group.command()

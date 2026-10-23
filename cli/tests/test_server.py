@@ -8,7 +8,7 @@ import click
 from click.testing import CliRunner
 import pytest
 
-from be import jira
+from be import config, jira
 from be.commands import pr, server
 
 PRS = [
@@ -387,3 +387,140 @@ def test_log_level_rejects_unknown_levels():
 
     result = CliRunner().invoke(server.server, ["--no-open", "--log-level", "loud"])
     assert result.exit_code == 2 and "loud" in result.output
+
+
+def test_render_page_links_config():
+    assert '<a class="nav-link" href="/config">config</a>' in server.render_page({})
+
+
+def test_render_config(isolated_config, monkeypatch):
+    config.set_value("git.name", "<Me>")
+    config.set_value("jira.token", "hunter2")
+    config.set_value("jira.projects.ACME", "Acme")
+    config.set_value("interactive", "yes")
+    monkeypatch.setenv("WORK_ORG", "acme")
+    page = server.render_config()
+    assert page.count('<tr class="setting">') == len(config.SETTINGS)
+    assert '<a class="nav-link" href="/">' in page
+    assert str(isolated_config) in page
+    # each setting is its own form, prefilled from the file and escaped
+    assert 'name="value" form="cfg-3" aria-label="git.name" value="&lt;Me&gt;"' in page
+    assert '<input type="hidden" name="key" value="git.name">' in page
+    # every setting but the map can be unset, as can the map's one entry
+    assert page.count('formaction="/config/unset"') == len(config.SETTINGS)
+    # a default shows as the placeholder
+    assert 'aria-label="claude.model" value="" placeholder="claude-opus-5-5"' in page
+    # the env var's value wins, and says so
+    assert "WORK_ORG overrides the file: acme" in page and "<td class=\"source\">env:WORK_ORG</td>" in page
+    # the token is a password box with a show button
+    assert 'type="password" name="value" form="cfg-13" aria-label="jira.token" value="hunter2"' in page
+    assert 'class="reveal"' in page
+    # dropdowns offer their choices and their default, plus a value the file has outside them
+    assert '<option value="">(default: false)</option><option value="true">true</option>' in page
+    assert '<option value="yes" selected>yes</option>' in page
+    assert '<option value="warning">' in page
+    # the map has a row per entry and one to add another
+    assert '<td class="key">jira.projects.ACME</td>' in page and "1 entry in the file" in page
+    assert '<input type="hidden" name="key" value="jira.projects.ACME">' in page
+    assert 'name="name" form="cfg-14-new"' in page and ">add</button>" in page
+    # settings given as flags say a save waits for a restart
+    assert "--parent was given" in server.render_config(fixed=("pr.dir",))
+    assert "was given" not in page
+
+
+def test_render_config_masks_env_secret(monkeypatch):
+    monkeypatch.setenv("JIRA_API_TOKEN", "s3cret")
+    page = server.render_config()
+    assert "JIRA_API_TOKEN overrides the file: ********" in page and "s3cret" not in page
+
+
+def test_render_config_invalid_file(isolated_config):
+    isolated_config.parent.mkdir(parents=True)
+    isolated_config.write_text("not = [toml")
+    page = server.render_config()
+    assert "invalid config file" in page and '<tr class="setting">' not in page
+
+
+def post_config(base, action, **fields):
+    return get(urllib.request.Request(f"{base}/config/{action}", data=urlencode(fields).encode()))
+
+
+def test_post_config(serve):
+    base, _, _, _ = serve
+    page = post_config(base, "set", key="git.email", value=" me@example.com ")
+    assert "saved git.email" in page and 'value="me@example.com"' in page
+    assert config.file_value("git.email") == "me@example.com"
+    assert "removed git.email" in post_config(base, "unset", key="git.email", value="me@example.com")
+    assert config.file_value("git.email") is None
+    # saving an empty value removes it too
+    post_config(base, "set", key="git.name", value="Me")
+    assert "removed git.name" in post_config(base, "set", key="git.name", value="")
+    assert config.load_file() == {}
+
+
+def test_post_config_map_entries(serve):
+    base, _, _, _ = serve
+    page = post_config(base, "set", key="jira.projects", name="OPS", value="Operations")
+    assert "saved jira.projects.OPS" in page and '<td class="key">jira.projects.OPS</td>' in page
+    post_config(base, "set", key="jira.projects.OPS", value="Ops")
+    assert config.file_value("jira.projects") == {"OPS": "Ops"}
+    assert "give the new entry a name" in post_config(base, "set", key="jira.projects", name="", value="x")
+    assert "give the new entry a name" in post_config(base, "set", key="jira.projects", name="a.b", value="x")
+    assert "removed jira.projects.OPS" in post_config(base, "unset", key="jira.projects.OPS")
+    assert config.load_file() == {}
+
+
+def test_post_config_errors(serve, monkeypatch):
+    base, _, _, _ = serve
+    assert "server.log_level must be one of debug, info, warning, error, not &#x27;loud&#x27;" in post_config(
+        base, "set", key="server.log_level", value="loud"
+    )
+    assert "nope: unknown key" in post_config(base, "set", key="nope", value="x")
+    monkeypatch.setenv("WORK_ORG", "acme")
+    assert "saved work_org; WORK_ORG is set and overrides it" in post_config(base, "set", key="work_org", value="x")
+    with pytest.raises(urllib.error.HTTPError):
+        get(base + "/config/set")
+
+
+@pytest.fixture
+def serve_live(monkeypatch):
+    """The server with no flags given, so pr.dir and server.log_level are reread."""
+    reviews = []
+    monkeypatch.setattr(pr, "open_review", lambda *args: reviews.append(args))
+    logger = server.logging.getLogger("be")
+    monkeypatch.setattr(logger, "level", logger.level)
+    httpd = HTTPServer(("127.0.0.1", 0), server.make_handler(None, fixed=()))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{httpd.server_port}", reviews, logger
+    httpd.shutdown()
+    httpd.server_close()
+
+
+def test_config_applies_live(serve_live, tmp_path):
+    base, reviews, logger = serve_live
+    post_config(base, "set", key="pr.dir", value=str(tmp_path))
+    get(urllib.request.Request(base + "/review", data=b"repo=acme/api&number=7"))
+    assert reviews == [("acme/api", 7, str(tmp_path))]
+    post_config(base, "set", key="server.log_level", value="debug")
+    assert logger.level == server.logging.DEBUG
+    post_config(base, "unset", key="server.log_level")
+    assert logger.level == server.logging.WARNING
+
+
+def test_flags_fix_settings(monkeypatch, tmp_path):
+    class Stopped(Exception):
+        pass
+
+    def stop(*a, **kw):
+        raise Stopped
+
+    monkeypatch.setattr(server, "HTTPServer", stop)
+    made = []
+    real = server.make_handler
+    monkeypatch.setattr(server, "make_handler", lambda parent, fixed: made.append(fixed) or real(parent, fixed))
+    logger = server.logging.getLogger("be")
+    monkeypatch.setattr(logger, "level", logger.level)
+    CliRunner().invoke(server.server, ["--no-open"])
+    CliRunner().invoke(server.server, ["--no-open", "--parent", str(tmp_path)], env={"BE_SERVER_LOG_LEVEL": "info"})
+    # only flags fix a setting; an env var or the file is reread when used
+    assert made == [(), ("pr.dir",)]

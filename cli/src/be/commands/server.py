@@ -1,4 +1,4 @@
-"""`be server`: a local web page with the `pr ls` and `jira ls` tables."""
+"""`be server`: a local web page with the `pr ls` and `jira ls` tables, and a config page."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import click
+from click.core import ParameterSource
 
 from be import config, jira
 from be.commands import jira as jira_command
@@ -16,7 +17,9 @@ from be.github import same_login
 
 log = logging.getLogger(__name__)
 
-LOG_LEVELS = ("debug", "info", "warning", "error")
+LOG_LEVELS = config.SETTINGS["server.log_level"].choices
+# the flag that fixes each setting the server reads, until it restarts, when given
+FLAGS = {"pr.dir": "--parent", "server.log_level": "--log-level"}
 
 # (id, heading) for each table; a PR table's id is its pr.KINDS list
 TABLES = (
@@ -83,10 +86,15 @@ header {
 .tab.active { background: var(--accent-fill); color: #fff; }
 .count:not(:empty) { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: rgba(255, 255, 255, 0.12); }
 .keys-toggle {
-  margin-left: auto; padding: 6px 10px; background: transparent; color: var(--muted);
+  padding: 6px 10px; background: transparent; color: var(--muted);
   border: 1px solid var(--border); border-radius: 8px;
 }
 .keys-toggle:hover { color: var(--text); border-color: var(--border-strong); }
+.nav-link {
+  padding: 6px 10px; color: var(--muted); border: 1px solid var(--border); border-radius: 8px;
+}
+.nav-link:hover { color: var(--text); border-color: var(--border-strong); }
+.header-links { display: flex; gap: 8px; margin-left: auto; }
 .keys { margin: 0; padding: 8px 24px; background: var(--inset); border-bottom: 1px solid var(--border); color: var(--muted); font-size: 12px; }
 main { max-width: 1280px; margin: 0 auto; padding: 20px 24px 48px; }
 .tab-panel { display: flex; flex-direction: column; gap: 20px; }
@@ -165,10 +173,36 @@ tr[data-draft=yes] td.col-draft { color: var(--muted); font-style: italic; }
 form[action='/merge'] button, .bulk button[value=merge]:not(:disabled) { background: var(--accent-fill); border-color: var(--accent-fill); color: #fff; }
 .bulk button:disabled { opacity: 0.45; cursor: default; }
 .empty { padding: 20px 12px; color: var(--muted); text-align: center; }
+.config td { vertical-align: top; }
+.config td.key { font-family: var(--mono); }
+.config .help { margin-top: 2px; color: var(--muted); font: 12px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif; white-space: normal; }
+.config .note { margin-top: 4px; color: var(--pending); font-size: 12px; white-space: normal; }
+.config .value { display: flex; gap: 6px; }
+.config input, .config select {
+  min-width: 0; width: 320px; max-width: 100%; padding: 5px 8px;
+  background: var(--bg); border: 1px solid var(--border-strong); border-radius: 6px; font-size: 13px;
+}
+.config input[name=name] { width: 100%; }
+.config input:focus, .config select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.config tr.entry td.key { padding-left: 28px; }
+.config td.source { padding-top: 14px; color: var(--muted); font-size: 12px; }
+.config button[value=save] { background: var(--accent-fill); border-color: var(--accent-fill); color: #fff; }
+.config .reveal { padding: 4px 10px; background: #1d2433; border: 1px solid var(--border-strong); border-radius: 6px; font-size: 12px; }
+.config-path { margin: 0; padding: 10px 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+.config-path code { font-family: var(--mono); color: var(--text-2); }
 @media (max-width: 640px) {
   header, main { padding-left: 16px; padding-right: 16px; }
   .keys { padding: 8px 16px; }
   .filters input[type=search] { flex: 1 1 100%; }
+  /* each setting stacks: key, then value, then source beside its buttons */
+  .config tr:has(th) { display: none; }
+  .config tr { display: grid; grid-template-columns: 1fr auto; padding: 6px 0; border-top: 1px solid var(--rule); }
+  .config td { padding: 4px 16px; border-top: 0; }
+  .config td.key, .config td:nth-child(2) { grid-column: 1 / -1; }
+  .config tr.entry td.key { padding-left: 16px; }
+  .config td.source { padding-top: 8px; }
+  .config td:last-child { width: auto; }
+  .config .value > :first-child { flex: 1; width: auto; }
 }
 """ + "".join(f".hide-{key} .col-{key} {{ display: none; }}\n" for key, *_ in PR_SELECTS)
 
@@ -575,6 +609,24 @@ KEYS = (
 )
 
 
+def page_shell(title: str, header: str, main: str, script: str, message: str = "", extra: str = "") -> str:
+    """A page with STYLE, header, any dismissable message atop main, and script; extra sits between header and main."""
+    parts = [
+        "<!doctype html><html><head><meta charset=utf-8>",
+        '<meta name="viewport" content="width=device-width, initial-scale=1">',
+        f"<title>{html.escape(title)}</title><style>{STYLE}</style></head><body>",
+        f'<header><span class="brand">be</span>{header}</header>',
+        f"{extra}<main>",
+    ]
+    if message:
+        parts.append(
+            f'<p class="msg"><span>{html.escape(message)}</span>'
+            '<button type="button" class="dismiss" aria-label="dismiss">✕</button></p>'
+        )
+    parts.append(f"{main}</main><script>{script}</script></body></html>")
+    return "\n".join(parts)
+
+
 def render_page(loaded: dict[str, list[dict] | str], message: str = "") -> str:
     """The `pr ls` tables and the `jira ls` table in tabs, each loaded on refresh, with the `-i` actions."""
     headings = dict(TABLES)
@@ -583,19 +635,12 @@ def render_page(loaded: dict[str, list[dict] | str], message: str = "") -> str:
         '<span class="count"></span></button>'
         for tab, label, _ in TABS
     )
-    parts = [
-        "<!doctype html><html><head><meta charset=utf-8>",
-        '<meta name="viewport" content="width=device-width, initial-scale=1">',
-        f"<title>be</title><style>{STYLE}</style></head><body>",
-        f'<header><span class="brand">be</span><nav class="tabs" aria-label="tabs">{tabs}</nav>'
-        '<button type="button" class="keys-toggle" aria-expanded="false">? keys</button></header>',
-        f'<p class="keys" hidden>{KEYS}</p><main>',
-    ]
-    if message:
-        parts.append(
-            f'<p class="msg"><span>{html.escape(message)}</span>'
-            '<button type="button" class="dismiss" aria-label="dismiss">✕</button></p>'
-        )
+    header = (
+        f'<nav class="tabs" aria-label="tabs">{tabs}</nav>'
+        '<div class="header-links"><button type="button" class="keys-toggle" aria-expanded="false">? keys</button>'
+        '<a class="nav-link" href="/config">config</a></div>'
+    )
+    parts = []
     for tab, _, tables in TABS:
         parts.append(f'<div class="tab-panel" data-tab="{tab}">')
         for table in tables:
@@ -604,8 +649,157 @@ def render_page(loaded: dict[str, list[dict] | str], message: str = "") -> str:
             else:
                 parts.append(pr_table(table, headings[table], loaded.get(table)))
         parts.append("</div>")
-    parts.append(f"</main><script>{SCRIPT}</script></body></html>")
-    return "\n".join(parts)
+    keys = f'<p class="keys" hidden>{KEYS}</p>'
+    return page_shell("be", header, "\n".join(parts), SCRIPT, message, extra=keys)
+
+
+# shows and hides the secret settings' values, and dismisses the message
+CONFIG_SCRIPT = """
+document.querySelectorAll("button.reveal").forEach(b => b.addEventListener("click", () => {
+  const input = b.previousElementSibling, show = input.type === "password";
+  input.type = show ? "text" : "password";
+  b.textContent = show ? "hide" : "show";
+  b.setAttribute("aria-pressed", show);
+}));
+const dismiss = document.querySelector(".msg .dismiss");
+if (dismiss) dismiss.addEventListener("click", () => dismiss.parentElement.remove());
+"""
+
+CONFIG_HEADER = ("KEY", "VALUE", "SOURCE")
+UNSET_CHOICE = "(unset)"
+
+
+def value_input(s: config.Setting, form: str, value: str) -> str:
+    """The input for setting s in form: a dropdown of its choices (and a blank entry naming its default, and
+    any other value the file has), a password box with a show button if secret, else a text box showing its
+    default."""
+    attrs = f'name="value" form="{form}" aria-label="{html.escape(s.key)}"'
+    if s.choices:
+        options = (*s.choices, value) if value and value not in s.choices else s.choices
+        blank = f"(default: {s.default})" if s.default else UNSET_CHOICE
+        choices = f'<option value="">{html.escape(blank)}</option>' + "".join(
+            f'<option value="{html.escape(o)}"{" selected" if o == value else ""}>{html.escape(o)}</option>'
+            for o in options
+        )
+        return f"<select {attrs}>{choices}</select>"
+    placeholder = f' placeholder="{html.escape(s.default)}"' if s.default else ""
+    if s.secret:
+        return (
+            f'<input type="password" {attrs} value="{html.escape(value)}" autocomplete="off">'
+            '<button type="button" class="reveal" aria-pressed="false">show</button>'
+        )
+    return f'<input type="text" {attrs} value="{html.escape(value)}"{placeholder}>'
+
+
+def config_actions(form: str, key: str, save: str = "save", unset: str = "unset") -> str:
+    """The form a row's inputs belong to, with its key and save and unset buttons."""
+    return (
+        f'<td><form id="{form}" class="actions" method="post" action="/config/set">'
+        f'<input type="hidden" name="key" value="{html.escape(key)}">'
+        f'<button name="do" value="save">{save}</button>'
+        + (f'<button formaction="/config/unset">{unset}</button>' if unset else "")
+        + "</form></td>"
+    )
+
+
+def override_note(s: config.Setting, effective) -> str:
+    """The note on a setting whose env var wins over the file, with the value it gives (masked if secret)."""
+    if s.secret:
+        shown = "********"
+    elif isinstance(effective, dict):
+        shown = ", ".join(effective) or "no entries"
+    else:
+        shown = effective
+    return f'<div class="note">{s.env} overrides the file: {html.escape(str(shown))}</div>'
+
+
+def config_rows(fixed: tuple[str, ...]) -> list[str]:
+    """A row per setting, and per entry of a map setting plus a row to add one, each saved on its own."""
+    data = config.load_file()
+    rows = ["<tr>" + "".join(f"<th>{h}</th>" for h in CONFIG_HEADER) + "<th></th></tr>"]
+    for n, s in enumerate(config.SETTINGS.values()):
+        effective, source = config.resolve(s.key)
+        file = config.file_value(s.key, data)
+        notes = override_note(s, effective) if source.startswith("env:") else ""
+        if s.key in fixed:
+            notes += f'<div class="note">{FLAGS[s.key]} was given, so `be server` uses it until restarted</div>'
+        key_cell = f'<td class="key">{html.escape(s.key)}<div class="help">{html.escape(s.help)}</div></td>'
+        if s.kind != "map":
+            form = f"cfg-{n}"
+            value = "" if file is None else str(file)
+            rows.append(
+                f'<tr class="setting">{key_cell}'
+                f'<td><div class="value">{value_input(s, form, value)}</div>{notes}</td>'
+                f'<td class="source">{html.escape(source)}</td>{config_actions(form, s.key)}</tr>'
+            )
+            continue
+        entries = file if isinstance(file, dict) else {}
+        count = f"{len(entries)} entr{'y' if len(entries) == 1 else 'ies'} in the file"
+        rows.append(
+            f'<tr class="setting">{key_cell}<td>{count}{notes}</td>'
+            f'<td class="source">{html.escape(source)}</td><td></td></tr>'
+        )
+        for m, (name, v) in enumerate(entries.items()):
+            form, key = f"cfg-{n}-{m}", f"{s.key}.{name}"
+            rows.append(
+                f'<tr class="entry"><td class="key">{html.escape(key)}</td>'
+                f'<td><div class="value">{value_input(s, form, str(v))}</div></td>'
+                f'<td class="source">file</td>{config_actions(form, key, unset="remove")}</tr>'
+            )
+        form = f"cfg-{n}-new"
+        rows.append(
+            f'<tr class="entry add"><td class="key"><input type="text" name="name" form="{form}"'
+            f' placeholder="NAME" aria-label="new {html.escape(s.key)} name"></td>'
+            f'<td><div class="value"><input type="text" name="value" form="{form}" placeholder="description"'
+            f' aria-label="new {html.escape(s.key)} description"></div></td>'
+            f"<td></td>{config_actions(form, s.key, save='add', unset='')}</tr>"
+        )
+    return rows
+
+
+def render_config(message: str = "", fixed: tuple[str, ...] = ()) -> str:
+    """Every setting with its file value to edit, its source and help; fixed names the settings `be server`
+    was given a flag for, which a save won't change until it restarts."""
+    try:
+        rows = config_rows(fixed)
+    except click.ClickException as e:
+        # e.g. the file isn't valid TOML: show why instead of the settings
+        rows = empty_row(CONFIG_HEADER, len(CONFIG_HEADER) + 1, e.format_message())
+    path = html.escape(str(config.config_path()))
+    main = "\n".join([
+        '<section class="config"><div class="head"><h2>config</h2></div>',
+        '<div class="table-wrap"><table>',
+        *rows,
+        "</table></div>",
+        f'<p class="config-path">saved to <code>{path}</code>; an env var wins over the file.'
+        " Saving an empty value removes it.</p></section>",
+    ])
+    header = '<div class="header-links"><a class="nav-link" href="/">← tables</a></div>'
+    return page_shell("be config", header, main, CONFIG_SCRIPT, message)
+
+
+def save_setting(form: dict, unset: bool) -> str:
+    """Set or unset the posted key (a map setting's key with a name adds that entry), and say what happened."""
+    key = form.get("key", [""])[0]
+    value = form.get("value", [""])[0].strip()
+    name = form.get("name", [""])[0].strip()
+    try:
+        s = config.setting(key)
+        if s.kind == "map" and key == s.key:
+            if not name or "." in name:
+                return f"{key}: give the new entry a name, without dots"
+            key = f"{key}.{name}"
+        if unset or not value:
+            config.unset_value(key)
+            log.info("removed %s from the config", key)
+            return f"removed {key}"
+        if s.choices and value not in s.choices:
+            return f"{key} must be one of {', '.join(s.choices)}, not {value!r}"
+        overridden = config.set_value(key, value)
+    except click.ClickException as e:
+        return f"{key}: {e.message}"
+    log.info("set %s in the config", key)
+    return f"saved {key}" + (f"; {s.env} is set and overrides it" if overridden else "")
 
 
 def fetch_table(table: str) -> list[dict] | str:
@@ -627,7 +821,8 @@ def fetch_table(table: str) -> list[dict] | str:
     return message
 
 
-def make_handler(parent: str | None) -> type[BaseHTTPRequestHandler]:
+def make_handler(parent: str | None, fixed: tuple[str, ...] = tuple(FLAGS)) -> type[BaseHTTPRequestHandler]:
+    """fixed names the settings in FLAGS given as flags, which keep their value; the rest are reread when used."""
     # each table is fetched only when its refresh link is clicked, then kept
     loaded: dict[str, list[dict] | str] = {}
 
@@ -635,10 +830,18 @@ def make_handler(parent: str | None) -> type[BaseHTTPRequestHandler]:
         def log_message(self, format: str, *args) -> None:
             log.info("%s %s", self.address_string(), format % args)
 
-        def redirect(self, message: str = "") -> None:
+        def redirect(self, message: str = "", path: str = "/") -> None:
             self.send_response(303)
-            self.send_header("Location", "/" + ("?" + urlencode({"msg": message}) if message else ""))
+            self.send_header("Location", path + ("?" + urlencode({"msg": message}) if message else ""))
             self.end_headers()
+
+        def send_page(self, page: str) -> None:
+            body = page.encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
 
         def do_GET(self) -> None:
             url = urlparse(self.path)
@@ -651,23 +854,24 @@ def make_handler(parent: str | None) -> type[BaseHTTPRequestHandler]:
                 loaded[table] = fetch_table(table)
                 self.redirect()
                 return
-            if url.path != "/":
+            message = query.get("msg", [""])[0]
+            if url.path == "/config":
+                self.send_page(render_config(message, fixed))
+            elif url.path == "/":
+                self.send_page(render_page(loaded, message))
+            else:
                 self.send_error(404)
-                return
-            body = render_page(loaded, query.get("msg", [""])[0]).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
 
         def do_POST(self) -> None:
             path = urlparse(self.path).path
-            if path not in ("/review", "/bulk", *MINE_PATHS):
+            if path not in ("/review", "/bulk", "/config/set", "/config/unset", *MINE_PATHS):
                 self.send_error(404)
                 return
             length = int(self.headers.get("Content-Length", 0))
-            form = parse_qs(self.rfile.read(length).decode())
+            form = parse_qs(self.rfile.read(length).decode(), keep_blank_values=True)
+            if path.startswith("/config/"):
+                self.config_action(form, unset=path == "/config/unset")
+                return
             if path == "/bulk":
                 self.bulk_action(form)
                 return
@@ -680,13 +884,26 @@ def make_handler(parent: str | None) -> type[BaseHTTPRequestHandler]:
                 self.mine_action(path[1:], repo, int(number))
                 return
             try:
-                pr.open_review(repo, int(number), parent)
+                pr.open_review(repo, int(number), self.parent())
             except click.ClickException as e:
                 log.warning("reviewing %s#%s failed: %s", repo, number, e.format_message())
                 self.redirect(f"{repo}#{number}: {e.format_message()}")
                 return
             log.info("opened %s#%s for review", repo, number)
             self.redirect(f"opened {repo}#{number}")
+
+        def parent(self) -> str | None:
+            """--parent if given, else pr.dir as it's set now."""
+            return parent if "pr.dir" in fixed else config.resolve("pr.dir")[0]
+
+        def config_action(self, form: dict, unset: bool) -> None:
+            message = save_setting(form, unset)
+            if "server.log_level" not in fixed:
+                # a saved log level applies now, unless its env var still wins
+                level, _ = config.resolve("server.log_level")
+                if str(level).lower() in LOG_LEVELS:
+                    logging.getLogger("be").setLevel(str(level).upper())
+            self.redirect(message, "/config")
 
         def mine_prs(self) -> list[dict]:
             if not isinstance(loaded.get("mine"), list):
@@ -754,12 +971,20 @@ def server(parent: str | None, host: str, port: int, no_open: bool, log_level: s
     your PRs marked ready (drafts), set to auto-merge, or merged (approved),
     one at a time or checked and done in bulk; each issue
     opened in Jira. Each table loads when you click its refresh link, and its
-    filter checkboxes apply in the page. Ctrl-C stops it.
+    filter checkboxes apply in the page. The config page (/config) edits the
+    config file, one setting at a time; pr.dir and server.log_level apply at
+    once unless --parent or --log-level was given. Ctrl-C stops it.
     """
     logging.basicConfig(format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     # only be's own loggers, so --log-level debug doesn't turn on libraries' debug output
     logging.getLogger("be").setLevel(log_level.upper())
-    httpd = HTTPServer((host, port), make_handler(parent))
+    ctx = click.get_current_context()
+    params = {"pr.dir": "parent", "server.log_level": "log_level"}
+    fixed = tuple(
+        key for key, param in params.items()
+        if ctx.get_parameter_source(param) == ParameterSource.COMMANDLINE
+    )
+    httpd = HTTPServer((host, port), make_handler(parent, fixed))
     url = f"http://{host}:{httpd.server_port}"
     click.echo(f"serving on {url}")
     if not no_open:

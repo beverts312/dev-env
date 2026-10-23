@@ -28,6 +28,8 @@ class Setting:
     kind: str = "str"
     # masked in `be config list`
     secret: bool = False
+    # the only values it takes, if limited; `be server`'s config page offers them in a dropdown
+    choices: tuple[str, ...] = ()
 
 
 SETTINGS = {
@@ -39,6 +41,7 @@ SETTINGS = {
             "BE_INTERACTIVE",
             "Use -i by default when run in a terminal: true or false",
             "false",
+            choices=("true", "false"),
         ),
         Setting("git.email", "GIT_EMAIL", "git user.email for `be git author`"),
         Setting("git.name", "GIT_NAME", "git user.name for `be git author`"),
@@ -56,6 +59,7 @@ SETTINGS = {
             "BE_SERVER_LOG_LEVEL",
             "`be server` log level: debug, info, warning or error",
             "warning",
+            choices=("debug", "info", "warning", "error"),
         ),
         Setting("cloudflare.account_id", "CLOUDFLARE_ACCOUNT_ID", "Cloudflare account for new zones"),
         Setting("jira.url", "JIRA_URL", "Base URL of the Jira site"),
@@ -103,6 +107,40 @@ def save_file(data: dict[str, Any]) -> None:
     except BaseException:
         os.unlink(tmp)
         raise
+
+
+def set_value(key: str, value: str) -> bool:
+    """Write KEY = VALUE to the config file; True if the setting's env var overrides it."""
+    s = setting(key)
+    if s.kind == "map" and key == s.key:
+        raise click.BadParameter(f"{key} is a map; set entries with {key}.<name>")
+    data = load_file()
+    *tables, name = key.split(".")
+    node = data
+    for table in tables:
+        node = node.setdefault(table, {})
+    node[name] = value
+    save_file(data)
+    return bool(os.environ.get(s.env))
+
+
+def unset_value(key: str) -> None:
+    """Remove KEY from the config file, and any tables that leaves empty."""
+    setting(key)
+    data = load_file()
+    *tables, name = key.split(".")
+    parents = [data]
+    for table in tables:
+        child = parents[-1].get(table)
+        if not isinstance(child, dict):
+            return
+        parents.append(child)
+    parents[-1].pop(name, None)
+    for table, parent in zip(reversed(tables), reversed(parents[:-1])):
+        if parent[table]:
+            break
+        del parent[table]
+    save_file(data)
 
 
 def file_value(key: str, data: dict[str, Any] | None = None) -> Any:

@@ -178,3 +178,23 @@ def test_interactive_rejects_other_values(monkeypatch):
     monkeypatch.setenv("BE_INTERACTIVE", "sometimes")
     with pytest.raises(click.ClickException, match="must be true or false"):
         config.interactive(None)
+
+
+def test_set_value_and_unset_value(isolated_config, monkeypatch):
+    assert config.set_value("jira.projects.ACME", "Acme") is False
+    assert config.set_value("git.name", "Me") is False
+    assert config.file_value("jira.projects") == {"ACME": "Acme"}
+    config.unset_value("jira.projects.ACME")
+    # the emptied table goes too
+    assert config.load_file() == {"git": {"name": "Me"}}
+    monkeypatch.setenv("GIT_NAME", "Env")
+    assert config.set_value("git.name", "Other") is True
+    with pytest.raises(click.BadParameter):
+        config.set_value("jira.projects", "x")
+    with pytest.raises(click.BadParameter):
+        config.unset_value("nope")
+
+
+def test_choices():
+    assert config.SETTINGS["interactive"].choices == ("true", "false")
+    assert config.SETTINGS["server.log_level"].choices == ("debug", "info", "warning", "error")
