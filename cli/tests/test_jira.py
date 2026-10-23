@@ -67,7 +67,7 @@ def test_in_progress_issues_pages(monkeypatch):
         ("jira.token", "tok"),
     )
     pages = [
-        {"issues": [{"key": "ACME-2", "fields": {"summary": "Two", "issuetype": {"name": "Story"}}}], "nextPageToken": "p2", "isLast": False},
+        {"issues": [{"key": "ACME-2", "fields": {"summary": "Two", "issuetype": {"name": "Story"}, "parent": {"key": "ACME-9"}}}], "nextPageToken": "p2", "isLast": False},
         {"issues": [{"key": "ACME-1", "fields": {"summary": "One"}}], "isLast": True},
     ]
     seen = []
@@ -78,8 +78,8 @@ def test_in_progress_issues_pages(monkeypatch):
 
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
     assert jira.in_progress_issues() == [
-        {"key": "ACME-2", "type": "Story", "summary": "Two"},
-        {"key": "ACME-1", "type": "", "summary": "One"},
+        {"key": "ACME-2", "type": "Story", "summary": "Two", "parent": "ACME-9"},
+        {"key": "ACME-1", "type": "", "summary": "One", "parent": ""},
     ]
     assert seen[0].startswith("https://x.atlassian.net/rest/api/3/search/jql?jql=assignee")
     assert "statusCategory" in urllib.parse.unquote_plus(seen[0])
@@ -146,13 +146,61 @@ def test_jira_ls_interactive_opens_browser(monkeypatch):
 
     configure(("jira.url", "https://x.atlassian.net/"))
     monkeypatch.setattr(jira, "in_progress_issues", lambda: ISSUES)
-    picks = [("open", 1), None]
+    picks = [("browse", 1), None]
     monkeypatch.setattr(jira_command, "choose", lambda rows, index=0, hint="", actions=(): picks.pop(0))
     launched = []
     monkeypatch.setattr(jira_command.click, "launch", launched.append)
     result = CliRunner().invoke(cli, ["jira", "ls", "-i"])
     assert result.exit_code == 0, result.output
     assert launched == ["https://x.atlassian.net/browse/ACME-3"]
+
+
+def open_issue_workspace(tmp_path, monkeypatch, issues, picks, dirs):
+    from be.commands import jira as jira_command
+
+    for name in dirs:
+        (tmp_path / name).mkdir()
+    configure(("ws.dir", str(tmp_path)))
+    monkeypatch.setattr(jira, "in_progress_issues", lambda: issues)
+    monkeypatch.setattr(jira_command, "choose", lambda rows, index=0, hint="", actions=(): picks.pop(0))
+    opened = []
+    monkeypatch.setattr(jira_command, "open_root", lambda root, window=None: opened.append(root))
+    result = CliRunner().invoke(cli, ["jira", "ls", "-i"])
+    assert result.exit_code == 0, result.output
+    return result, opened
+
+
+def test_jira_ls_interactive_opens_workspace(tmp_path, monkeypatch):
+    issues = [dict(issue, parent="") for issue in ISSUES]
+    _, opened = open_issue_workspace(
+        tmp_path, monkeypatch, issues, [("open", 1)], ["acme-3", "ACME-12-other"]
+    )
+    assert opened == [tmp_path / "acme-3"]
+
+
+def test_jira_ls_interactive_opens_parent_workspace(tmp_path, monkeypatch):
+    issues = [{"key": "ACME-5", "type": "Sub-task", "summary": "Part", "parent": "ACME-4"}]
+    _, opened = open_issue_workspace(
+        tmp_path, monkeypatch, issues, [("open", 0)], ["ACME-4", "ACME-5x"]
+    )
+    assert opened == [tmp_path / "ACME-4"]
+
+
+def test_jira_ls_interactive_prefers_issue_workspace(tmp_path, monkeypatch):
+    issues = [{"key": "ACME-5", "type": "Sub-task", "summary": "Part", "parent": "ACME-4"}]
+    _, opened = open_issue_workspace(
+        tmp_path, monkeypatch, issues, [("open", 0)], ["ACME-4", "ACME-5"]
+    )
+    assert opened == [tmp_path / "ACME-5"]
+
+
+def test_jira_ls_interactive_missing_workspace(tmp_path, monkeypatch):
+    issues = [{"key": "ACME-5", "type": "Sub-task", "summary": "Part", "parent": "ACME-4"}]
+    result, opened = open_issue_workspace(
+        tmp_path, monkeypatch, issues, [("open", 0), None], ["ACME-6"]
+    )
+    assert opened == []
+    assert "no workspace named ACME-5 or ACME-4" in result.output
 
 
 def test_jira_ls_interactive_by_default(monkeypatch):

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import click
 
 from be import config, jira
-from be.commands.ws import choose
+from be.commands.ws import choose, open_root, workspace_entries
 
 EMPTY = "no in progress issues assigned to you"
 FEATURE = "Feature"
@@ -38,10 +40,27 @@ def hidden_note(hidden: int) -> str:
     return f"{hidden} hidden ({FEATURE}); --all shows them"
 
 
+def issue_workspace(issue: dict, parent: str | None) -> Path | None:
+    """The workspace named after the issue's key, else after its parent's key."""
+    entries = {entry.name.upper(): entry for entry in workspace_entries(parent)}
+    for key in (issue["key"], issue.get("parent")):
+        if key and key.upper() in entries:
+            return entries[key.upper()]
+    return None
+
+
 @jira_group.command(name="list")
-@config.interactive_option("Select an issue; enter opens it in the browser, a toggles --all.")
+@config.interactive_option(
+    "Select an issue; enter opens its workspace, o opens it in the browser, a toggles --all."
+)
 @click.option("-a", "--all", "show_all", is_flag=True, help="Include issues whose type is Feature.")
-def list_issues(interactive: bool | None, show_all: bool) -> None:
+@config.option("ws.dir", "--dir", "parent", help="Directory that holds the workspaces.")
+@config.option(
+    "cmux.window", "--window", help="cmux window to open in: pick, or an index, ref or UUID."
+)
+def list_issues(
+    interactive: bool | None, show_all: bool, parent: str | None, window: str | None
+) -> None:
     """List in progress issues assigned to you. Also available as ls.
 
     Features are hidden unless you pass --all.
@@ -70,8 +89,8 @@ def list_issues(interactive: bool | None, show_all: bool) -> None:
         toggle = f"a {'filter' if show_all else 'show all'}"
         if issues:
             rows = issue_rows(issues)
-            hint = f"{title} · enter open in browser, {toggle}, q quit"
-            actions = ("open", "all")
+            hint = f"{title} · enter open workspace, o open in browser, {toggle}, q quit"
+            actions = ("open", "browse", "all")
         else:
             rows = [EMPTY]
             hint = f"{title} · {toggle}, q quit"
@@ -84,7 +103,21 @@ def list_issues(interactive: bool | None, show_all: bool) -> None:
             show_all = not show_all
             index = 0
             continue
-        click.launch(jira.issue_url(issues[index]["key"]))
+        issue = issues[index]
+        if action == "browse":
+            click.launch(jira.issue_url(issue["key"]))
+            continue
+        try:
+            root = issue_workspace(issue, parent)
+        except click.ClickException as e:
+            click.echo(e.message, err=True)
+            continue
+        if root is None:
+            keys = " or ".join(key for key in (issue["key"], issue.get("parent")) if key)
+            click.echo(f"no workspace named {keys}", err=True)
+            continue
+        open_root(root, window=window)
+        return
 
 
 jira_group.add_command(list_issues, name="ls")

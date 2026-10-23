@@ -80,11 +80,14 @@ IN_PROGRESS_JQL = 'assignee = currentUser() AND statusCategory = "In Progress" O
 
 
 def in_progress_issues() -> list[dict]:
-    """Issues assigned to you in an In Progress status, as {"key", "type", "summary"}, newest first."""
+    """Issues assigned to you in an In Progress status, newest first.
+
+    Each is {"key", "type", "summary", "parent"}; parent is the parent issue's key, or "".
+    """
     issues: list[dict] = []
     token = None
     while True:
-        params = {"jql": IN_PROGRESS_JQL, "fields": "summary,issuetype", "maxResults": "100"}
+        params = {"jql": IN_PROGRESS_JQL, "fields": "summary,issuetype,parent", "maxResults": "100"}
         if token:
             params["nextPageToken"] = token
         data = get_json(f"/rest/api/3/search/jql?{urllib.parse.urlencode(params)}")
@@ -97,6 +100,7 @@ def in_progress_issues() -> list[dict]:
                     "key": issue.get("key", ""),
                     "type": (fields.get("issuetype") or {}).get("name") or "",
                     "summary": fields.get("summary") or "",
+                    "parent": (fields.get("parent") or {}).get("key") or "",
                 }
             )
         token = data.get("nextPageToken")
