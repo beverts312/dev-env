@@ -29,6 +29,7 @@ def clone(slug: str, dest: Path | str | None = None) -> int:
 
 
 def remote_matches(dest: Path, slug: str) -> bool:
+    """Whether dest's origin is slug. GitHub owner and name ignore case."""
     result = subprocess.run(
         ["git", "-C", str(dest), "remote", "get-url", "origin"],
         capture_output=True,
@@ -36,7 +37,8 @@ def remote_matches(dest: Path, slug: str) -> bool:
     )
     if result.returncode != 0:
         return False
-    url = result.stdout.strip().removesuffix(".git")
+    url = result.stdout.strip().lower().removesuffix(".git")
+    slug = slug.lower()
     return url.endswith(f":{slug}") or url.endswith(f"/{slug}")
 
 

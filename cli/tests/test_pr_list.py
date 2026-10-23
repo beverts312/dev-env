@@ -262,6 +262,15 @@ def test_same_login():
     assert not github.same_login("renovate", "renovate-approve")
 
 
+def test_remote_matches_ignores_case(tmp_path, monkeypatch):
+    url = "git@github.com:adcellerant/node-service-common.git\n"
+    monkeypatch.setattr(
+        subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, stdout=url)
+    )
+    assert github.remote_matches(tmp_path, "AdCellerant/node-service-common")
+    assert not github.remote_matches(tmp_path, "AdCellerant/other")
+
+
 def test_mark_ready_and_auto_merge_call_gh(monkeypatch):
     calls = []
 
