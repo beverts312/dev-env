@@ -48,6 +48,7 @@ form { margin: 0; }
 .actions { display: flex; gap: 4px; }
 .filters { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
 .msg { padding: 4px 8px; background: #eee; }
+.bulk { display: flex; align-items: center; gap: 4px; margin-bottom: 8px; }
 .keys, .empty { color: #666; }
 @media (prefers-color-scheme: dark) {
   body { background: #111; color: #ddd; }
@@ -59,7 +60,7 @@ form { margin: 0; }
 
 # keyboard parity with `pr ls -i`: arrows/j/k move, enter reviews (or opens an issue), o opens,
 # m switches table, a toggles the table's filters, r marks your draft ready, u enables auto-merge;
-# filters apply here and are remembered per table in localStorage
+# x checks your PR for the bulk bar; filters apply here and are remembered per table in localStorage
 SCRIPT = """
 const sections = [...document.querySelectorAll("section")];
 let t = 0, r = 0;
@@ -80,10 +81,30 @@ function applyFilters(s) {
       || picked.some(x => row.dataset[x.name] !== x.value)
       || (text !== "" && !(row.dataset.search || "").includes(text));
     row.classList.toggle("filtered", hide);
+    // a hidden row is never acted on in bulk
+    const pick = row.querySelector("input.pick");
+    if (hide && pick) pick.checked = false;
     hidden += hide;
   });
+  updateBulk(s);
   const count = s.querySelector(".hidden-count");
   if (count) count.textContent = hidden ? ` (${hidden} hidden)` : "";
+}
+// the bulk bar acts on the checked rows of your PRs; each button counts the checked rows
+// it applies to and is disabled when there are none
+function updateBulk(s) {
+  const bar = s.querySelector("form.bulk");
+  if (!bar) return;
+  const picked = [...s.querySelectorAll("input.pick:checked")].map(b => b.closest("tr"));
+  bar.querySelector(".picked-count").textContent = `${picked.length} selected`;
+  bar.querySelectorAll("button[name=action]").forEach(button => {
+    const n = picked.filter(row => row.dataset.actions.split(" ").includes(button.value)).length;
+    button.disabled = n === 0;
+    button.textContent = `${button.dataset.label} (${n})`;
+  });
+  const all = s.querySelector("input.pick-all");
+  const shown = [...s.querySelectorAll("tr.pr:not(.filtered) input.pick")];
+  all.checked = shown.length > 0 && shown.every(b => b.checked);
 }
 function draw() {
   document.querySelectorAll("tr.selected").forEach(e => e.classList.remove("selected"));
@@ -122,6 +143,19 @@ sections.forEach(s => {
       draw();
     });
   }
+  s.querySelectorAll("input.pick").forEach(b => b.addEventListener("change", () => updateBulk(s)));
+  const all = s.querySelector("input.pick-all");
+  if (all) all.addEventListener("change", () => {
+    s.querySelectorAll("tr.pr:not(.filtered) input.pick").forEach(b => { b.checked = all.checked; });
+    updateBulk(s);
+  });
+  const bar = s.querySelector("form.bulk");
+  if (bar) bar.addEventListener("submit", e => {
+    if (!e.submitter || e.submitter.value !== "merge") return;
+    const n = [...s.querySelectorAll("input.pick:checked")]
+      .filter(b => b.closest("tr").dataset.actions.split(" ").includes("merge")).length;
+    if (!confirm(`Merge ${n} PR${n === 1 ? "" : "s"}?`)) e.preventDefault();
+  });
   applyFilters(s);
 });
 document.addEventListener("keydown", e => {
@@ -157,6 +191,10 @@ document.addEventListener("keydown", e => {
     if (form) form.submit(); else window.open(row.querySelector("a").href, "_blank");
     return;
   }
+  else if (e.key === "x" && row) {
+    const pick = row.querySelector("input.pick");
+    if (pick) { pick.checked = !pick.checked; updateBulk(sections[t]); }
+  }
   else if ((e.key === "r" || e.key === "u") && row) {
     const form = row.querySelector(`form[action="/${e.key === "r" ? "ready" : "automerge"}"]`);
     if (form) form.submit();
@@ -174,6 +212,8 @@ draw();
 MINE_BUTTONS = {"ready": "ready", "automerge": "auto-merge", pr.MERGE_ACTION: "merge"}
 # your PRs' actions, as POST paths
 MINE_PATHS = tuple(f"/{a}" for a in MINE_BUTTONS)
+# the bulk bar's form, which your PRs' checkboxes belong to
+BULK_FORM = "bulk-mine"
 
 
 def mine_actions(p: dict) -> list[str]:
@@ -225,11 +265,29 @@ def select_html(key: str, options: tuple, default: str) -> str:
     return f'<label>{key} <select name="{key}" data-default="{default}">{choices}</select></label>'
 
 
+def bulk_bar() -> str:
+    """The form your PRs' checkboxes submit, with a button per action."""
+    buttons = "".join(
+        f'<button name="action" value="{a}" data-label="{label}" disabled>{label} (0)</button>'
+        for a, label in MINE_BUTTONS.items()
+    )
+    return (
+        f'<form id="{BULK_FORM}" class="bulk" method="post" action="/bulk">'
+        f'<span class="picked-count">0 selected</span>{buttons}</form>'
+    )
+
+
 def section(
-    table: str, heading: str, filters: tuple, rows: list[str], search: bool = False, selects: tuple = ()
+    table: str,
+    heading: str,
+    filters: tuple,
+    rows: list[str],
+    search: bool = False,
+    selects: tuple = (),
+    bulk: str = "",
 ) -> list[str]:
-    """The heading with its refresh link, filter dropdowns and checkboxes, and (if search) a
-    search box matching rows' data-search; the caller adds the table."""
+    """The heading with its refresh link, filter dropdowns and checkboxes, (if search) a
+    search box matching rows' data-search, and any bulk bar; the caller adds the table."""
     boxes = "".join(select_html(key, options, default) for key, options, default, _ in selects)
     boxes += "".join(
         f'<label><input type="checkbox" name="{key}" checked> {html.escape(label)}</label>'
@@ -242,6 +300,7 @@ def section(
         f'<h2>{html.escape(heading)}<span class="hidden-count"></span>'
         f' <a href="/refresh?table={table}">refresh</a></h2>',
         f'<div class="filters">{boxes}</div>',
+        bulk,
         "<table>",
         *rows,
         "</table></section>",
@@ -271,12 +330,22 @@ def pr_table(table: str, heading: str, prs: list[dict] | str | None) -> str:
         rows = empty_row(header, colspan, message)
         return "\n".join(section(table, heading, PR_FILTERS, rows, search=True, selects=PR_SELECTS))
     out = [header_row(header, 1)]
+    if mine:
+        out[0] = out[0].replace(
+            "<tr>", '<tr><th><input type="checkbox" class="pick-all" aria-label="select all shown"></th>', 1
+        )
     for p in prs:
         url = html.escape(pr.pr_url(p["repo"], p["number"]))
         repo = html.escape(p["repo"])
         forms = [pr_form("review", "review", repo, p["number"])]
+        pick = ""
         if mine:
             forms += [pr_form(a, MINE_BUTTONS[a], repo, p["number"]) for a in mine_actions(p)]
+            name = f"{repo}#{p['number']}"
+            pick = (
+                f'<td><input type="checkbox" class="pick" name="pr" value="{name}"'
+                f' form="{BULK_FORM}" aria-label="select {name}"></td>'
+            )
         values = {key: value(p) for key, _, _, value in PR_SELECTS}
         cells = dict(zip(pr.pr_header(drafts=True), (html.escape(c) for c in pr.pr_cells(p, drafts=True))))
         cells["PR"] = f'<a href="{url}" target="_blank">{cells["PR"]}</a>'
@@ -284,13 +353,19 @@ def pr_table(table: str, heading: str, prs: list[dict] | str | None) -> str:
         # what the search box matches, case-insensitively, and each dropdown's value
         search = html.escape(f"{p['repo']} {p['title']}".lower())
         data = "".join(f' data-{key}="{html.escape(v)}"' for key, v in values.items())
+        if mine:
+            data += f' data-actions="{" ".join(mine_actions(p))}"'
         out.append(
             f'<tr class="pr" data-search="{search}"{data}{hide_attr(p, PR_FILTERS)}>'
+            + pick
             + "".join(f"<td{col_attr(h)}>{cells[h]}</td>" for h in header)
             + actions
             + "</tr>"
         )
-    return "\n".join(section(table, heading, PR_FILTERS, out, search=True, selects=PR_SELECTS))
+    bulk = bulk_bar() if mine else ""
+    return "\n".join(
+        section(table, heading, PR_FILTERS, out, search=True, selects=PR_SELECTS, bulk=bulk)
+    )
 
 
 ISSUE_HEADER = ("ISSUE", "TYPE", "SUMMARY")
@@ -327,7 +402,7 @@ def render_page(loaded: dict[str, list[dict] | str], message: str = "") -> str:
         "<!doctype html><html><head><meta charset=utf-8>",
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         f"<title>be</title><style>{STYLE}</style></head><body>",
-        '<p class="keys">j/k move · enter review or open issue · o open in browser · r mark your draft ready · u enable auto-merge on your PR · m switch table · a toggle filters · / search repo or title</p>',
+        '<p class="keys">j/k move · enter review or open issue · o open in browser · r mark your draft ready · u enable auto-merge on your PR · x check your PR for bulk actions · m switch table · a toggle filters · / search repo or title</p>',
     ]
     if message:
         parts.append(f'<p class="msg">{html.escape(message)}</p>')
@@ -388,11 +463,14 @@ def make_handler(parent: str | None) -> type[BaseHTTPRequestHandler]:
 
         def do_POST(self) -> None:
             path = urlparse(self.path).path
-            if path not in ("/review", *MINE_PATHS):
+            if path not in ("/review", "/bulk", *MINE_PATHS):
                 self.send_error(404)
                 return
             length = int(self.headers.get("Content-Length", 0))
             form = parse_qs(self.rfile.read(length).decode())
+            if path == "/bulk":
+                self.bulk_action(form)
+                return
             repo = form.get("repo", [""])[0]
             number = form.get("number", [""])[0]
             if not repo or not number.isdigit():
@@ -408,25 +486,44 @@ def make_handler(parent: str | None) -> type[BaseHTTPRequestHandler]:
                 return
             self.redirect(f"opened {repo}#{number}")
 
-        def mine_action(self, action: str, repo: str, number: int) -> None:
+        def mine_prs(self) -> list[dict]:
             if not isinstance(loaded.get("mine"), list):
                 loaded["mine"] = fetch_table("mine")
-            mine = loaded["mine"] if isinstance(loaded["mine"], list) else []
+            return loaded["mine"] if isinstance(loaded["mine"], list) else []
+
+        def run_action(self, action: str, repo: str, number: int, bulk: bool = False) -> str:
+            """Run action on your PR; in bulk, a PR the action isn't offered on is skipped."""
+            mine = self.mine_prs()
             found = [p for p in mine if p["repo"] == repo and p["number"] == number]
             if not found:
-                self.redirect(f"{repo}#{number} is not one of your open PRs")
-                return
+                return f"{repo}#{number} is not one of your open PRs"
+            if bulk and action not in mine_actions(found[0]):
+                return f"skipped {repo}#{number}: no {MINE_BUTTONS[action]} on it"
             try:
                 message = pr.run_mine_action(action, found[0])
             except click.ClickException as e:
-                message = f"{repo}#{number}: {e.format_message()}"
-            else:
-                # run_mine_action updates the row in place rather than us refetching
-                # the table, so a PR marked ready offers auto-merge next, and one set
-                # to auto-merge offers nothing; a merged one is dropped
-                if message.startswith("merged"):
-                    mine.remove(found[0])
-            self.redirect(message)
+                return f"{repo}#{number}: {e.format_message()}"
+            # run_mine_action updates the row in place rather than us refetching
+            # the table, so a PR marked ready offers auto-merge next, and one set
+            # to auto-merge offers nothing; a merged one is dropped
+            if message.startswith("merged"):
+                mine.remove(found[0])
+            return message
+
+        def mine_action(self, action: str, repo: str, number: int) -> None:
+            self.redirect(self.run_action(action, repo, number))
+
+        def bulk_action(self, form: dict) -> None:
+            action = form.get("action", [""])[0]
+            picked = [value.rpartition("#") for value in form.get("pr", [])]
+            if action not in MINE_BUTTONS or any(not n.isdigit() or not r for r, _, n in picked):
+                self.send_error(400)
+                return
+            if not picked:
+                self.redirect("no PRs selected")
+                return
+            messages = [self.run_action(action, r, int(n), bulk=True) for r, _, n in picked]
+            self.redirect("; ".join(messages))
 
     return Handler
 
@@ -444,8 +541,8 @@ def server(parent: str | None, host: str, port: int, no_open: bool) -> None:
     """Serve a web page with the `pr ls` tables and the `jira ls` table.
 
     Each PR can be reviewed (as `pr review`) or opened on GitHub, and each of
-    your PRs marked ready (drafts), set to auto-merge, or merged (approved);
-    each issue
+    your PRs marked ready (drafts), set to auto-merge, or merged (approved),
+    one at a time or checked and done in bulk; each issue
     opened in Jira. Each table loads when you click its refresh link, and its
     filter checkboxes apply in the page. Ctrl-C stops it.
     """

@@ -243,3 +243,69 @@ def test_post_mine_action_shows_errors(serve, monkeypatch):
     data = urlencode({"repo": "acme/api", "number": "7"}).encode()
     page = get(urllib.request.Request(base + "/automerge", data=data))
     assert "acme/api#7: auto-merge is not allowed" in page
+
+
+def test_render_page_bulk_bar():
+    page = server.render_page({"review": PRS, "mine": PRS[:3]})
+    review, mine = page.split('data-table="mine"')
+    # only your PRs get checkboxes and the bulk bar
+    assert 'class="pick"' not in review and "form.bulk" not in review.split("<script>")[0]
+    assert mine.count('class="pick"') == 3
+    assert 'value="acme/api#9" form="bulk-mine"' in mine
+    assert '<form id="bulk-mine" class="bulk" method="post" action="/bulk">' in mine
+    for action in server.MINE_BUTTONS:
+        assert f'name="action" value="{action}"' in mine
+    # each row says which bulk actions apply to it
+    assert 'data-draft="yes" data-actions="ready"' in mine
+    assert 'data-draft="no" data-actions="automerge"' in mine
+    assert 'class="pick"' not in server.render_page({"mine": []})
+
+
+def post_bulk(base, action, *prs):
+    data = urlencode([("action", action), *(("pr", p) for p in prs)]).encode()
+    return get(urllib.request.Request(base + "/bulk", data=data))
+
+
+def test_post_bulk(serve, monkeypatch):
+    base, fetched, _, _ = serve
+    calls = []
+    monkeypatch.setattr(pr, "mark_ready", lambda *args: calls.append(("ready", *args)))
+    monkeypatch.setattr(pr, "enable_auto_merge", lambda *args: calls.append(("auto", *args)))
+    page = post_bulk(base, "automerge", "acme/api#7", "acme/web-app#1234", "acme/api#9", "acme/api#5")
+    # the draft is skipped, and PRs that aren't yours are refused
+    assert calls == [("auto", "acme/api", 7, "--squash"), ("auto", "acme/web-app", 1234, "--squash")]
+    assert "enabled auto-merge on acme/api#7; enabled auto-merge on acme/web-app#1234" in page
+    assert "skipped acme/api#9: no auto-merge on it" in page
+    assert "acme/api#5 is not one of your open PRs" in page
+    assert fetched == ["mine"]
+    page = post_bulk(base, "ready", "acme/api#9")
+    assert calls[-1] == ("ready", "acme/api", 9)
+    assert 'data-draft="no" data-actions="automerge"' in page
+
+
+def test_post_bulk_merge_keeps_going(serve, monkeypatch):
+    base, _, _, _ = serve
+    monkeypatch.setattr(
+        pr, "authored_prs", lambda: [{**PRS[0], "approved": True}, {**PRS[1], "approved": True}]
+    )
+    merged = []
+
+    def merge(repo, number, flag):
+        if number == 7:
+            raise click.ClickException("not mergeable")
+        merged.append(number)
+
+    monkeypatch.setattr(pr, "merge", merge)
+    page = post_bulk(base, "merge", "acme/api#7", "acme/web-app#1234")
+    assert merged == [1234]
+    assert "acme/api#7: not mergeable; merged acme/web-app#1234" in page
+    # the merged PR is dropped, the failed one stays
+    assert page.count('<tr class="pr"') == 1
+
+
+def test_post_bulk_bad_input(serve):
+    base, _, _, _ = serve
+    assert "no PRs selected" in post_bulk(base, "ready")
+    for action, prs in (("nope", ["acme/api#7"]), ("ready", ["acme/api#x"]), ("ready", ["#7"])):
+        with pytest.raises(urllib.error.HTTPError):
+            post_bulk(base, action, *prs)
