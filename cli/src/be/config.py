@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 import tomllib
 from dataclasses import dataclass
@@ -33,6 +34,12 @@ SETTINGS = {
     s.key: s
     for s in (
         Setting("work_org", "WORK_ORG", "GitHub org for bare repo names"),
+        Setting(
+            "interactive",
+            "BE_INTERACTIVE",
+            "Use -i by default when run in a terminal: true or false",
+            "false",
+        ),
         Setting("git.email", "GIT_EMAIL", "git user.email for `be git author`"),
         Setting("git.name", "GIT_NAME", "git user.name for `be git author`"),
         Setting("pr.dir", "PRS_DIR", "Parent directory for PR checkouts"),
@@ -161,3 +168,32 @@ def option(key: str, *param_decls: str, help: str = "", **kwargs: Any):
         help=f"{help or s.help}  {suffix}",
         **kwargs,
     )
+
+
+BOOLEANS = {"true": True, "yes": True, "on": True, "1": True}
+BOOLEANS |= {"false": False, "no": False, "off": False, "0": False}
+
+
+def interactive_option(help: str):
+    """The -i/--interactive flag, with -I/--no-interactive to override the setting."""
+    return click.option(
+        "-i/-I",
+        "--interactive/--no-interactive",
+        default=None,
+        help=f"{help} -I turns it off.  [config: interactive]",
+    )
+
+
+def in_terminal() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def interactive(flag: bool | None) -> bool:
+    """The flag if given, else the interactive setting when stdin and stdout are a terminal."""
+    if flag is not None:
+        return flag
+    value, source = resolve("interactive")
+    on = BOOLEANS.get(str(value).lower())
+    if on is None:
+        raise click.ClickException(f"interactive ({source}) must be true or false, not {value!r}")
+    return on and in_terminal()

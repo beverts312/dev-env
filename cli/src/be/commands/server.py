@@ -37,6 +37,8 @@ table { border-collapse: collapse; margin-bottom: 24px; }
 th, td { text-align: left; padding: 2px 12px 2px 0; }
 tr.selected { background: #dde8ff; }
 tr.filtered { display: none; }
+/* the draft column only shows while drafts can be listed */
+section.no-drafts .draft-col { display: none; }
 form { margin: 0; }
 .actions { display: flex; gap: 4px; }
 .filters { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
@@ -63,6 +65,7 @@ function applyFilters(s) {
   const on = boxes(s).filter(b => b.checked).map(b => b.name);
   const search = s.querySelector(".filters input[type=search]");
   const text = search ? search.value.trim().toLowerCase() : "";
+  s.classList.toggle("no-drafts", on.includes("draft"));
   let hidden = 0;
   s.querySelectorAll("tr.pr, tr.issue").forEach(row => {
     const hide = (row.dataset.hide || "").split(" ").some(k => on.includes(k))
@@ -202,7 +205,13 @@ def pr_table(table: str, heading: str, prs: list[dict] | str | None) -> str:
             message = f"github: {prs}" if prs else pr.EMPTY[mine]
         rows = empty_row(pr.PR_HEADER, colspan, message)
         return "\n".join(section(table, heading, PR_FILTERS, rows, search=True))
-    out = ["<tr>" + "".join(f"<th>{h}</th>" for h in pr.PR_HEADER) + "<th></th></tr>"]
+    header = pr.pr_header(drafts=True)
+    draft_col = header.index("DRAFT")
+
+    def cell(tag: str, i: int, content: str) -> str:
+        return f'<{tag} class="draft-col">{content}</{tag}>' if i == draft_col else f"<{tag}>{content}</{tag}>"
+
+    out = ["<tr>" + "".join(cell("th", i, h) for i, h in enumerate(header)) + "<th></th></tr>"]
     for p in prs:
         url = html.escape(pr.pr_url(p["repo"], p["number"]))
         repo = html.escape(p["repo"])
@@ -211,19 +220,15 @@ def pr_table(table: str, heading: str, prs: list[dict] | str | None) -> str:
             # only drafts can be marked ready, and GitHub won't auto-merge a draft
             action, label = MINE_BUTTONS[0] if p["draft"] else MINE_BUTTONS[1]
             forms.append(pr_form(action, label, repo, p["number"]))
-        cells = [
-            f'<a href="{url}" target="_blank">#{p["number"]}</a>',
-            repo,
-            html.escape(p["author"]),
-            html.escape(p["checks"]),
-            html.escape(p["title"]),
-            '<div class="actions">' + "".join(forms) + "</div>",
-        ]
+        texts = [html.escape(c) for c in pr.pr_cells(p, drafts=True)]
+        texts[0] = f'<a href="{url}" target="_blank">{texts[0]}</a>'
+        cells = [cell("td", i, c) for i, c in enumerate(texts)]
+        cells.append('<td><div class="actions">' + "".join(forms) + "</div></td>")
         # what the search box matches, case-insensitively
         search = html.escape(f"{p['repo']} {p['title']}".lower())
         out.append(
             f'<tr class="pr" data-search="{search}"{hide_attr(p, PR_FILTERS)}>'
-            + "".join(f"<td>{c}</td>" for c in cells)
+            + "".join(cells)
             + "</tr>"
         )
     return "\n".join(section(table, heading, PR_FILTERS, out, search=True))

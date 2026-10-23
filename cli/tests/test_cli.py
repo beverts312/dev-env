@@ -8,7 +8,7 @@ import pytest
 import yaml
 from click.testing import CliRunner
 
-from be import cmux
+from be import cmux, config
 from be.cli import cli
 from be.commands import pr, ws
 
@@ -18,7 +18,8 @@ def test_help_shows_envvars():
     assert "GIT_EMAIL" in runner.invoke(cli, ["git", "author", "--help"]).output
     assert "WORK_ORG" in runner.invoke(cli, ["git", "clone", "--help"]).output
     assert "PRS_DIR" in runner.invoke(cli, ["pr", "review", "--help"]).output
-    create_help = runner.invoke(cli, ["ws", "create", "--help"]).output
+    # joined, since the wide -i/--interactive column changes the wrapping
+    create_help = " ".join(runner.invoke(cli, ["ws", "create", "--help"]).output.split())
     assert "BE_CLAUDE_MODEL" in create_help
     assert "WS_DIR" in create_help
     assert "[config: ws.dir]" in create_help
@@ -245,6 +246,25 @@ def test_ws_create_interactive_defaults_to_given_values(tmp_path, monkeypatch):
         yaml.safe_load((tmp_path / "proj" / "workspace.yml").read_text())["description"]
         == "given"
     )
+
+
+def test_ws_create_setting_prompts_only_without_work_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("BE_INTERACTIVE", "true")
+    monkeypatch.setattr(config, "in_terminal", lambda: True)
+    monkeypatch.setattr(cmux, "start", lambda: "cmux")
+    monkeypatch.setattr(cmux, "new_workspace", lambda binary, args: "")
+    monkeypatch.setattr(cmux, "workspace_ref", lambda output: "workspace:1")
+    monkeypatch.setattr(
+        subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0)
+    )
+    given = CliRunner().invoke(cli, ["ws", "create", "given", "--dir", str(tmp_path)])
+    assert given.exit_code == 0, given.output
+    assert "Workspace name" not in given.output
+    prompted = CliRunner().invoke(
+        cli, ["ws", "create", "--dir", str(tmp_path)], input="proj\n\n\n\n"
+    )
+    assert prompted.exit_code == 0, prompted.output
+    assert "Workspace name" in prompted.output
 
 
 def test_ws_create_requires_work_dir_without_interactive():

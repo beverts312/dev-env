@@ -114,18 +114,27 @@ def open_review(slug: str, number: int, parent: str | None) -> None:
 pr.add_command(review, name="r")
 
 
-PR_HEADER = ("PR", "REPO", "AUTHOR", "CHECKS", "TITLE")
+PR_HEADER = ("PR", "REPO", "AUTHOR", "CHECKS", "APPROVALS", "TITLE")
 
 
-def pr_rows(prs: list[dict], header: bool = False) -> list[str]:
-    """One aligned line per PR: number, repo, author, checks, title."""
-    cells = [
-        (f"#{p['number']}", p["repo"], p["author"], p["checks"], p["title"]) for p in prs
-    ]
+def pr_header(drafts: bool) -> tuple[str, ...]:
+    """PR_HEADER, with DRAFT before the title if drafts can be listed."""
+    return PR_HEADER[:-1] + ("DRAFT",) * drafts + PR_HEADER[-1:]
+
+
+def pr_cells(p: dict, drafts: bool) -> tuple[str, ...]:
+    """The pr_header(drafts) cells for p, unescaped."""
+    draft = ("yes" if p["draft"] else "no",) * drafts
+    return (f"#{p['number']}", p["repo"], p["author"], p["checks"], str(p["approvals"]), *draft, p["title"])
+
+
+def pr_rows(prs: list[dict], header: bool = False, drafts: bool = False) -> list[str]:
+    """One aligned line per PR: number, repo, author, checks, approvals, draft (if drafts), title."""
+    cells = [pr_cells(p, drafts) for p in prs]
     if header:
-        cells.insert(0, PR_HEADER)
+        cells.insert(0, pr_header(drafts))
     # the title is last and left ragged
-    widths = [max(len(row[i]) for row in cells) for i in range(len(PR_HEADER) - 1)]
+    widths = [max(len(row[i]) for row in cells) for i in range(len(cells[0]) - 1)]
     return [
         "  ".join(cell.ljust(width) for cell, width in zip(row, widths)) + "  " + row[-1]
         for row in cells
@@ -177,12 +186,9 @@ def hidden_note(hidden: int) -> str:
     "--parent",
     help="Parent folder to clone into when reviewing (default: current directory).",
 )
-@click.option(
-    "-i",
-    "--interactive",
-    is_flag=True,
-    help="Select a PR; enter opens pr review, o opens it on GitHub, m toggles mine,"
-    " a toggles --all; on your PRs, r marks a draft ready and u enables auto-merge.",
+@config.interactive_option(
+    "Select a PR; enter opens pr review, o opens it on GitHub, m toggles mine,"
+    " a toggles --all; on your PRs, r marks a draft ready and u enables auto-merge."
 )
 @click.option(
     "-a",
@@ -192,12 +198,13 @@ def hidden_note(hidden: int) -> str:
     help="Include drafts, PRs whose checks don't pass, and Renovate's PRs.",
 )
 @click.option("-m", "--mine", is_flag=True, help="List PRs you opened instead.")
-def list_prs(parent: str | None, interactive: bool, show_all: bool, mine: bool) -> None:
+def list_prs(parent: str | None, interactive: bool | None, show_all: bool, mine: bool) -> None:
     """List open PRs that request your review. Also available as ls.
 
     Only ready PRs with passing checks, not by Renovate, are shown unless you
     pass --all; the same applies with --mine.
     """
+    interactive = config.interactive(interactive)
     if not interactive:
         prs, hidden = filter_prs(fetch_prs(mine), show_all)
         if hidden:
@@ -205,7 +212,7 @@ def list_prs(parent: str | None, interactive: bool, show_all: bool, mine: bool) 
         if not prs:
             click.echo(EMPTY[mine])
             return
-        for row in pr_rows(prs, header=True):
+        for row in pr_rows(prs, header=True, drafts=show_all):
             click.echo(row)
         return
     # each list is fetched once, so toggling back is instant
@@ -223,7 +230,7 @@ def list_prs(parent: str | None, interactive: bool, show_all: bool, mine: bool) 
             f" a {'filter' if show_all else 'show all'}"
         )
         if prs:
-            rows = pr_rows(prs)
+            rows = pr_rows(prs, drafts=show_all)
             mine_keys = "r ready, u auto-merge, " if mine else ""
             hint = f"{title} · enter review, o open on GitHub, {mine_keys}{keys}, q quit"
             actions = ("open", "browse", "toggle", "all")

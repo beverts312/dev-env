@@ -11,10 +11,10 @@ from be import jira
 from be.commands import pr, server
 
 PRS = [
-    {"number": 7, "repo": "acme/api", "title": "Fix <login>", "checks": "pass", "draft": False, "author": "dev"},
-    {"number": 1234, "repo": "acme/web-app", "title": "Add page", "checks": "fail", "draft": False, "author": "dev"},
-    {"number": 9, "repo": "acme/api", "title": "WIP", "checks": "pass", "draft": True, "author": "dev"},
-    {"number": 5, "repo": "acme/api", "title": "Bump", "checks": "pass", "draft": False, "author": "renovate"},
+    {"number": 7, "repo": "acme/api", "title": "Fix <login>", "checks": "pass", "approvals": 2, "draft": False, "author": "dev"},
+    {"number": 1234, "repo": "acme/web-app", "title": "Add page", "checks": "fail", "approvals": 0, "draft": False, "author": "dev"},
+    {"number": 9, "repo": "acme/api", "title": "WIP", "checks": "pass", "approvals": 0, "draft": True, "author": "dev"},
+    {"number": 5, "repo": "acme/api", "title": "Bump", "checks": "pass", "approvals": 0, "draft": False, "author": "renovate"},
 ]
 
 
@@ -40,6 +40,11 @@ def test_render_page_marks_rows_for_filters():
     assert "no open PRs by you" in page
     # titles are escaped
     assert "Fix &lt;login&gt;" in page and "<login>" not in page
+    # the draft column is always rendered; the page hides it while "not drafts" is checked
+    assert '<th class="draft-col">DRAFT</th>' in page
+    assert page.count('<td class="draft-col">yes</td>') == 1
+    assert page.count('<td class="draft-col">no</td>') == 3
+    assert 'toggle("no-drafts"' in page
 
 
 ISSUES = [

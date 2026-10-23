@@ -153,3 +153,20 @@ def test_jira_ls_interactive_opens_browser(monkeypatch):
     result = CliRunner().invoke(cli, ["jira", "ls", "-i"])
     assert result.exit_code == 0, result.output
     assert launched == ["https://x.atlassian.net/browse/ACME-3"]
+
+
+def test_jira_ls_interactive_by_default(monkeypatch):
+    from be.commands import jira as jira_command
+
+    configure(("interactive", "true"))
+    monkeypatch.setattr(jira_command.config, "in_terminal", lambda: True)
+    monkeypatch.setattr(jira, "in_progress_issues", lambda: ISSUES)
+    chosen = []
+    monkeypatch.setattr(
+        jira_command, "choose", lambda rows, index=0, hint="", actions=(): chosen.append(rows)
+    )
+    assert CliRunner().invoke(cli, ["jira", "ls"]).exit_code == 0
+    assert len(chosen) == 1
+    result = CliRunner().invoke(cli, ["jira", "ls", "-I"])
+    assert result.output.splitlines()[-1].startswith("ACME-3")
+    assert len(chosen) == 1
