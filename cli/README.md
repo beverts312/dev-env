@@ -47,11 +47,17 @@ Combine them as `'./cli[backup,dns]'`.
 | `be pr clean [--parent DIR] [--dry-run] [-y]` |                        | Delete everything inside the PR directory, keeping the directory itself. It lists what it will remove and asks first. It refuses to run if no PR directory is configured, or if the directory is `/`, your home directory, or a parent of it. Symlinks are removed, not followed |
 | `be pr list [-i] [-a] [-m] [--parent DIR]` | | List open PRs that request your review, directly or through a team (alias: `be pr ls`); `-m`/`--mine` lists open PRs you opened instead, with the same filters. By default only ready (non-draft) PRs with passing checks that aren't by Renovate (`renovate`) are shown, with a count of the hidden ones on stderr; `-a`/`--all` shows every PR. Shows columns for number, repo, author, combined check status (`pass`, `fail`, `pending`, `none`), and title. Uses `gh`. `-i` moves through the list; enter runs `be pr review` on the selected PR, `o` opens it on GitHub, `m` toggles between review requests and your PRs, `a` toggles the filters (like `--all`), `q` quits |
 
+### `be jira`
+
+| Command                 | What it does                                                                                                                                                                                                                                                                  |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `be jira list [-i] [-a]` | List Jira issues assigned to you whose status is in the In Progress category (alias: `be jira ls`), most recently updated first, showing the issue key, type, and summary. Features are hidden by default, with a count of them on stderr; `-a`/`--all` shows them. Needs `jira.url`, `jira.email`, and `jira.token`; see [Jira](#jira). `-i` moves through the list; enter opens the selected issue in your browser, `a` toggles the filter (like `--all`), `q` quits |
+
 ### `be server`
 
 | Command | What it does |
 | ------- | ------------ |
-| `be server [--host H] [--port P] [--parent DIR] [--no-open]` | Serve a local web page (default `http://127.0.0.1:8765`, opened in your browser) with two tables matching `be pr ls` and `be pr ls --mine`. Each row has a review button (runs `be pr review`) and links to GitHub; `show all` toggles the filters and `refresh` fetches the lists again. Keys match `be pr ls -i`: `j`/`k` or arrows move, enter reviews, `o` opens on GitHub, `m` switches table, `a` toggles the filters |
+| `be server [--host H] [--port P] [--parent DIR] [--no-open]` | Serve a local web page (default `http://127.0.0.1:8765`, opened in your browser) with tables matching `be pr ls`, `be pr ls --mine`, and `be jira ls`. Each PR row has a review button (runs `be pr review`) and links to GitHub; each issue links to Jira. If the Jira lookup fails (e.g. `jira.*` isn't set), its table shows the error and the PR tables still load. `show all` toggles the filters (including hidden Features) and `refresh` fetches the lists again. Keys match `be pr ls -i`: `j`/`k` or arrows move, enter reviews a PR or opens an issue, `o` opens in the browser, `m` switches table, `a` toggles the filters |
 
 ### `be ws`
 
@@ -168,9 +174,9 @@ OPS = "Operations"
 | `cmux.bin`              | `BE_CMUX_BIN`           | `pr review`, `ws create`, `ws open`, `ws list -i`     | Path to the cmux binary                                                                            | `cmux` on `PATH`, then `/Applications/cmux.app/Contents/Resources/bin/cmux` |
 | `cmux.window` | `BE_CMUX_WINDOW` | `ws create`, `ws open`, `ws list -i` (`--window`) | cmux window that new workspaces open in. `pick` lists the windows, labelled by their selected workspace, and asks (it doesn't ask when there is only one); a window index, ref, or UUID is passed to cmux as is | inside cmux, the window `be` runs in; outside cmux (e.g. iTerm), `pick` |
 | `cloudflare.account_id` | `CLOUDFLARE_ACCOUNT_ID` | `dns r53-cf` (`--account-id`)                         | Cloudflare account that new zones are created in                                                   | none; Cloudflare picks the token's account                                  |
-| `jira.url`              | `JIRA_URL`              | `ws create`                                           | Base URL of the Jira site, e.g. `https://example.atlassian.net`                                    | none                                                                        |
-| `jira.email`            | `JIRA_EMAIL`            | `ws create`                                           | Atlassian account email for the Jira API                                                           | none                                                                        |
-| `jira.token`            | `JIRA_API_TOKEN`        | `ws create`                                           | Atlassian API token for the Jira API. Masked in `be config list`                                   | none                                                                        |
+| `jira.url`              | `JIRA_URL`              | `ws create`, `jira ls`, `server`                      | Base URL of the Jira site, e.g. `https://example.atlassian.net`                                    | none                                                                        |
+| `jira.email`            | `JIRA_EMAIL`            | `ws create`, `jira ls`, `server`                      | Atlassian account email for the Jira API                                                           | none                                                                        |
+| `jira.token`            | `JIRA_API_TOKEN`        | `ws create`, `jira ls`, `server`                      | Atlassian API token for the Jira API. Masked in `be config list`                                   | none                                                                        |
 | `jira.projects`         | `JIRA_PROJECTS`         | `ws create`                                           | Map of Jira project key to description. The env var is a JSON object, e.g. `{"OPS": "Operations"}` | none                                                                        |
 | –                       | `BE_CONFIG`             | everything                                            | Path to the config file                                                                            | `~/.be/config`                                                              |
 
@@ -203,8 +209,9 @@ Map settings such as `jira.projects` are edited one entry at a time:
 
 ### Jira
 
-`ws create` looks up Jira issues with an Atlassian API token and Basic auth. It
-needs `jira.url`, `jira.email`, `jira.token`, and `jira.projects`. Create a
+`ws create` and `jira ls` look up Jira issues with an Atlassian API token and
+Basic auth. They need `jira.url`, `jira.email`, and `jira.token`; `ws create`
+also needs `jira.projects`. Create a
 token at id.atlassian.com under Security > API tokens, copy it, then:
 
 ```bash

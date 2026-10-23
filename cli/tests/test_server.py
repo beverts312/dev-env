@@ -7,6 +7,7 @@ from urllib.parse import urlencode
 import click
 import pytest
 
+from be import jira
 from be.commands import pr, server
 
 PRS = [
@@ -28,6 +29,25 @@ def test_render_page_filters_by_default():
     assert "Fix &lt;login&gt;" in page and "<login>" not in page
 
 
+ISSUES = [
+    {"key": "ACME-12", "type": "Bug", "summary": "Fix <login>"},
+    {"key": "ACME-1", "type": "Feature", "summary": "Big thing"},
+]
+
+
+def test_render_page_issues(isolated_config, monkeypatch):
+    monkeypatch.setenv("JIRA_URL", "https://x.atlassian.net")
+    page = server.render_page({False: [], True: []}, show_all=False, issues=ISSUES)
+    assert "jira issues (1 hidden)" in page
+    assert 'href="https://x.atlassian.net/browse/ACME-12"' in page
+    assert "Fix &lt;login&gt;" in page
+    assert "Big thing" not in page
+    page = server.render_page({False: [], True: []}, show_all=True, issues=ISSUES)
+    assert page.count('<tr class="issue">') == 2
+    page = server.render_page({False: [], True: []}, show_all=False, issues="jira.url must be set")
+    assert "jira: jira.url must be set" in page
+
+
 def test_render_page_show_all():
     page = server.render_page({False: [], True: PRS}, show_all=True, message="opened x#1")
     assert page.count('<tr class="pr">') == 4
@@ -42,6 +62,7 @@ def serve(monkeypatch, tmp_path):
     fetched = []
     monkeypatch.setattr(pr, "review_requests", lambda: fetched.append("review") or PRS)
     monkeypatch.setattr(pr, "authored_prs", lambda: fetched.append("mine") or PRS[:1])
+    monkeypatch.setattr(jira, "in_progress_issues", lambda: fetched.append("jira") or [])
     reviews = []
     monkeypatch.setattr(pr, "open_review", lambda *args: reviews.append(args))
     httpd = HTTPServer(("127.0.0.1", 0), server.make_handler(str(tmp_path)))
@@ -62,9 +83,21 @@ def test_get_shows_both_tables_and_caches(serve):
     page = get(base + "/")
     assert "review requests (3 hidden)" in page and "your PRs" in page
     assert get(base + "/?all=1").count('<tr class="pr">') == 5
-    assert fetched == ["review", "mine"]
+    assert fetched == ["review", "mine", "jira"]
     get(base + "/refresh")
-    assert fetched == ["review", "mine", "review", "mine"]
+    assert fetched == ["review", "mine", "jira", "review", "mine", "jira"]
+
+
+def test_get_shows_jira_errors(serve, monkeypatch):
+    base, _, _, _ = serve
+
+    def fail():
+        raise jira.JiraError("HTTP 401 from x")
+
+    monkeypatch.setattr(jira, "in_progress_issues", fail)
+    get(base + "/refresh")
+    page = get(base + "/")
+    assert "jira: HTTP 401 from x" in page and "your PRs" in page
 
 
 def test_post_review_opens_and_redirects(serve):

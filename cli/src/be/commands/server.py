@@ -1,4 +1,4 @@
-"""`be server`: a local web page with the `pr ls` tables."""
+"""`be server`: a local web page with the `pr ls` and `jira ls` tables."""
 
 from __future__ import annotations
 
@@ -8,7 +8,8 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 import click
 
-from be import config
+from be import config, jira
+from be.commands import jira as jira_command
 from be.commands import pr
 
 # (mine, heading) for each table, in page order
@@ -30,11 +31,12 @@ form { margin: 0; }
 }
 """
 
-# keyboard parity with `pr ls -i`: arrows/j/k move, enter reviews, o opens, m switches table, a toggles all
+# keyboard parity with `pr ls -i`: arrows/j/k move, enter reviews (or opens an issue), o opens,
+# m switches table, a toggles all
 SCRIPT = """
 const tables = [...document.querySelectorAll("table")];
 let t = 0, r = 0;
-const rows = () => [...tables[t].querySelectorAll("tr.pr")];
+const rows = () => [...tables[t].querySelectorAll("tr.pr, tr.issue")];
 function draw() {
   document.querySelectorAll("tr.selected").forEach(e => e.classList.remove("selected"));
   const row = rows()[r];
@@ -48,7 +50,11 @@ document.addEventListener("keydown", e => {
   else if (e.key === "m") { t = (t + 1) % tables.length; r = 0; }
   else if (e.key === "a") { location = document.getElementById("all").href; return; }
   else if (e.key === "o" && row) { window.open(row.querySelector("a").href, "_blank"); return; }
-  else if (e.key === "Enter" && row) { row.querySelector("form").submit(); return; }
+  else if (e.key === "Enter" && row) {
+    const form = row.querySelector("form");
+    if (form) form.submit(); else window.open(row.querySelector("a").href, "_blank");
+    return;
+  }
   else return;
   e.preventDefault();
   draw();
@@ -88,8 +94,43 @@ def pr_table(prs: list[dict], mine: bool, heading: str, show_all: bool) -> str:
     return "\n".join(out)
 
 
-def render_page(fetched: dict[bool, list[dict]], show_all: bool, message: str = "") -> str:
-    """Both `pr ls` tables, with links for the `-i` actions."""
+ISSUE_HEADER = ("ISSUE", "TYPE", "SUMMARY")
+
+
+def issue_table(issues: list[dict] | str, show_all: bool) -> str:
+    """The `jira ls` table; issues is the error message when the lookup failed."""
+    heading = "jira issues"
+    if isinstance(issues, str):
+        shown, hidden = [], 0
+        empty = f"jira: {issues}"
+    else:
+        shown, hidden = jira_command.filter_issues(issues, show_all)
+        empty = jira_command.EMPTY
+    if hidden:
+        heading += f" ({hidden} hidden)"
+    out = [f"<h2>{html.escape(heading)}</h2>", "<table>"]
+    out.append("<tr>" + "".join(f"<th>{h}</th>" for h in ISSUE_HEADER) + "</tr>")
+    if not shown:
+        out.append(f"<tr><td colspan={len(ISSUE_HEADER)}>{html.escape(empty)}</td></tr>")
+    for issue in shown:
+        url = html.escape(jira.issue_url(issue["key"]))
+        cells = [
+            f'<a href="{url}" target="_blank">{html.escape(issue["key"])}</a>',
+            html.escape(issue["type"]),
+            html.escape(issue["summary"]),
+        ]
+        out.append('<tr class="issue">' + "".join(f"<td>{c}</td>" for c in cells) + "</tr>")
+    out.append("</table>")
+    return "\n".join(out)
+
+
+def render_page(
+    fetched: dict[bool, list[dict]],
+    show_all: bool,
+    message: str = "",
+    issues: list[dict] | str = (),
+) -> str:
+    """Both `pr ls` tables and the `jira ls` table, with links for the `-i` actions."""
     toggle = "/" if show_all else "/?all=1"
     links = (
         f'<a id="all" href="{toggle}">{"filter" if show_all else "show all"}</a>'
@@ -98,14 +139,15 @@ def render_page(fetched: dict[bool, list[dict]], show_all: bool, message: str = 
     parts = [
         "<!doctype html><html><head><meta charset=utf-8>",
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
-        f"<title>be PRs</title><style>{STYLE}</style></head><body>",
+        f"<title>be</title><style>{STYLE}</style></head><body>",
         f"<p>{links}</p>",
-        '<p class="keys">j/k move · enter review · o open on GitHub · m switch table · a toggle all</p>',
+        '<p class="keys">j/k move · enter review or open issue · o open in browser · m switch table · a toggle all</p>',
     ]
     if message:
         parts.append(f'<p class="msg">{html.escape(message)}</p>')
     for mine, heading in TABLES:
         parts.append(pr_table(fetched[mine], mine, heading, show_all))
+    parts.append(issue_table(issues, show_all))
     parts.append(f"<script>{SCRIPT}</script></body></html>")
     return "\n".join(parts)
 
@@ -113,6 +155,8 @@ def render_page(fetched: dict[bool, list[dict]], show_all: bool, message: str = 
 def make_handler(parent: str | None) -> type[BaseHTTPRequestHandler]:
     # each list is fetched once, like `pr ls -i`; /refresh clears it
     fetched: dict[bool, list[dict]] = {}
+    # the jira issues, or the error message from looking them up
+    issues: list[list[dict] | str] = []
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args) -> None:
@@ -132,6 +176,7 @@ def make_handler(parent: str | None) -> type[BaseHTTPRequestHandler]:
             show_all = query.get("all") == ["1"]
             if url.path == "/refresh":
                 fetched.clear()
+                issues.clear()
                 self.redirect(show_all)
                 return
             if url.path != "/":
@@ -140,7 +185,12 @@ def make_handler(parent: str | None) -> type[BaseHTTPRequestHandler]:
             for mine, _ in TABLES:
                 if mine not in fetched:
                     fetched[mine] = pr.fetch_prs(mine)
-            body = render_page(fetched, show_all, query.get("msg", [""])[0]).encode()
+            if not issues:
+                try:
+                    issues.append(jira.in_progress_issues())
+                except jira.JiraError as e:
+                    issues.append(str(e))
+            body = render_page(fetched, show_all, query.get("msg", [""])[0], issues[0]).encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -179,10 +229,10 @@ def make_handler(parent: str | None) -> type[BaseHTTPRequestHandler]:
 @click.option("--port", default=8765, show_default=True, help="Port to listen on.")
 @click.option("--no-open", is_flag=True, help="Don't open the page in a browser.")
 def server(parent: str | None, host: str, port: int, no_open: bool) -> None:
-    """Serve a web page with the `pr ls` tables: review requests and your PRs.
+    """Serve a web page with the `pr ls` tables and the `jira ls` table.
 
-    Each row can be reviewed (as `pr review`) or opened on GitHub, and the
-    filters toggle like `pr ls -i`. Ctrl-C stops it.
+    Each PR can be reviewed (as `pr review`) or opened on GitHub, each issue
+    opened in Jira, and the filters toggle like `pr ls -i`. Ctrl-C stops it.
     """
     httpd = HTTPServer((host, port), make_handler(parent))
     url = f"http://{host}:{httpd.server_port}"

@@ -29,7 +29,19 @@ def issue_key(name: str, projects: dict) -> str | None:
     return f"{project}-{match.group(2)}"
 
 
-def issue_summary(key: str) -> str:
+def site_url() -> str:
+    url, _ = config.resolve("jira.url")
+    if not url:
+        raise JiraError("jira.url must be set")
+    return url.rstrip("/")
+
+
+def issue_url(key: str) -> str:
+    return f"{site_url()}/browse/{key}"
+
+
+def get_json(path: str, not_found: str = "") -> object:
+    """GET path from the Jira REST API; not_found is appended to a 404 error."""
     url, _ = config.resolve("jira.url")
     email, _ = config.resolve("jira.email")
     token, _ = config.resolve("jira.token")
@@ -37,21 +49,56 @@ def issue_summary(key: str) -> str:
         raise JiraError("jira.url, jira.email and jira.token must be set")
     auth = base64.b64encode(f"{email}:{token}".encode()).decode()
     request = urllib.request.Request(
-        f"{url.rstrip('/')}/rest/api/3/issue/{urllib.parse.quote(key)}?fields=summary",
+        f"{url.rstrip('/')}{path}",
         headers={"Authorization": f"Basic {auth}", "Accept": "application/json"},
     )
     try:
         with urllib.request.urlopen(request, timeout=10) as response:
-            data = json.load(response)
+            return json.load(response)
     except urllib.error.HTTPError as e:
-        # Jira answers 404, not 401, when it rejects the credentials
-        hint = "; the issue is missing or the token was rejected" if e.code == 404 else ""
+        hint = f"; {not_found}" if e.code == 404 and not_found else ""
         raise JiraError(f"HTTP {e.code} from {url}{hint}") from None
     except urllib.error.URLError as e:
         raise JiraError(f"could not reach {url}: {e.reason}") from None
     except (json.JSONDecodeError, TimeoutError) as e:
         raise JiraError(str(e)) from None
+
+
+def issue_summary(key: str) -> str:
+    data = get_json(
+        f"/rest/api/3/issue/{urllib.parse.quote(key)}?fields=summary",
+        # Jira answers 404, not 401, when it rejects the credentials
+        not_found="the issue is missing or the token was rejected",
+    )
     summary = data.get("fields", {}).get("summary") if isinstance(data, dict) else None
     if not isinstance(summary, str) or not summary:
         raise JiraError(f"no summary in the response for {key}")
     return summary
+
+
+IN_PROGRESS_JQL = 'assignee = currentUser() AND statusCategory = "In Progress" ORDER BY updated DESC'
+
+
+def in_progress_issues() -> list[dict]:
+    """Issues assigned to you in an In Progress status, as {"key", "type", "summary"}, newest first."""
+    issues: list[dict] = []
+    token = None
+    while True:
+        params = {"jql": IN_PROGRESS_JQL, "fields": "summary,issuetype", "maxResults": "100"}
+        if token:
+            params["nextPageToken"] = token
+        data = get_json(f"/rest/api/3/search/jql?{urllib.parse.urlencode(params)}")
+        if not isinstance(data, dict):
+            raise JiraError("unexpected response from the Jira search")
+        for issue in data.get("issues") or []:
+            fields = issue.get("fields") or {}
+            issues.append(
+                {
+                    "key": issue.get("key", ""),
+                    "type": (fields.get("issuetype") or {}).get("name") or "",
+                    "summary": fields.get("summary") or "",
+                }
+            )
+        token = data.get("nextPageToken")
+        if not token or data.get("isLast", True):
+            return issues
