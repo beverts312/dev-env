@@ -18,13 +18,24 @@ PRS = [
 ]
 
 
-def test_render_page_filters_by_default():
-    page = server.render_page({False: PRS, True: []}, show_all=False)
-    assert "review requests (3 hidden)" in page
-    assert "https://github.com/acme/api/pull/7" in page
-    assert "acme/web-app" not in page
+def test_render_page_starts_empty():
+    page = server.render_page({})
+    assert page.count(server.NOT_LOADED) == 3
+    for table in ("review", "mine", "jira"):
+        assert f'href="/refresh?table={table}"' in page
+    assert '<tr class="pr"' not in page
+
+
+def test_render_page_marks_rows_for_filters():
+    page = server.render_page({"review": PRS, "mine": []})
+    # every row is rendered; the checkboxes hide them in the page
+    assert page.count('<tr class="pr"') == 4
+    assert '<tr class="pr">' in page  # #7 passes every filter
+    assert 'data-hide="checks"' in page
+    assert 'data-hide="draft"' in page
+    assert 'data-hide="renovate"' in page
+    assert page.count('type="checkbox"') == 2 * len(server.PR_FILTERS) + len(server.ISSUE_FILTERS)
     assert "no open PRs by you" in page
-    assert 'href="/?all=1"' in page
     # titles are escaped
     assert "Fix &lt;login&gt;" in page and "<login>" not in page
 
@@ -37,23 +48,18 @@ ISSUES = [
 
 def test_render_page_issues(isolated_config, monkeypatch):
     monkeypatch.setenv("JIRA_URL", "https://x.atlassian.net")
-    page = server.render_page({False: [], True: []}, show_all=False, issues=ISSUES)
-    assert "jira issues (1 hidden)" in page
+    page = server.render_page({"jira": ISSUES})
     assert 'href="https://x.atlassian.net/browse/ACME-12"' in page
     assert "Fix &lt;login&gt;" in page
-    assert "Big thing" not in page
-    page = server.render_page({False: [], True: []}, show_all=True, issues=ISSUES)
-    assert page.count('<tr class="issue">') == 2
-    page = server.render_page({False: [], True: []}, show_all=False, issues="jira.url must be set")
+    assert page.count('<tr class="issue"') == 2
+    assert '<tr class="issue" data-hide="feature">' in page
+    page = server.render_page({"jira": "jira.url must be set"})
     assert "jira: jira.url must be set" in page
 
 
-def test_render_page_show_all():
-    page = server.render_page({False: [], True: PRS}, show_all=True, message="opened x#1")
-    assert page.count('<tr class="pr">') == 4
-    assert "no review requests" in page
-    assert " hidden)" not in page
-    assert 'id="all" href="/"' in page
+def test_render_page_message():
+    page = server.render_page({"mine": PRS}, message="opened x#1")
+    assert "no review requests" not in page and server.NOT_LOADED in page
     assert "opened x#1" in page
 
 
@@ -61,7 +67,7 @@ def test_render_page_show_all():
 def serve(monkeypatch, tmp_path):
     fetched = []
     monkeypatch.setattr(pr, "review_requests", lambda: fetched.append("review") or PRS)
-    monkeypatch.setattr(pr, "authored_prs", lambda: fetched.append("mine") or PRS[:3])
+    monkeypatch.setattr(pr, "authored_prs", lambda: fetched.append("mine") or [dict(p) for p in PRS[:3]])
     monkeypatch.setattr(jira, "in_progress_issues", lambda: fetched.append("jira") or [])
     reviews = []
     monkeypatch.setattr(pr, "open_review", lambda *args: reviews.append(args))
@@ -78,35 +84,48 @@ def get(url):
         return resp.read().decode()
 
 
-def test_get_shows_both_tables_and_caches(serve):
+def test_get_loads_only_refreshed_tables(serve):
     base, fetched, _, _ = serve
     page = get(base + "/")
-    assert "review requests (3 hidden)" in page and "your PRs" in page
-    assert get(base + "/?all=1").count('<tr class="pr">') == 7
-    assert fetched == ["review", "mine", "jira"]
-    get(base + "/refresh")
-    assert fetched == ["review", "mine", "jira", "review", "mine", "jira"]
+    assert fetched == []
+    assert page.count(server.NOT_LOADED) == 3
+    page = get(base + "/refresh?table=review")
+    assert fetched == ["review"]
+    assert page.count('<tr class="pr"') == 4 and page.count(server.NOT_LOADED) == 2
+    # loaded tables are kept
+    get(base + "/")
+    get(base + "/refresh?table=jira")
+    assert fetched == ["review", "jira"]
+    get(base + "/refresh?table=review")
+    assert fetched == ["review", "jira", "review"]
+    with pytest.raises(urllib.error.HTTPError):
+        get(base + "/refresh?table=nope")
 
 
-def test_get_shows_jira_errors(serve, monkeypatch):
+def test_get_shows_fetch_errors(serve, monkeypatch):
     base, _, _, _ = serve
 
     def fail():
         raise jira.JiraError("HTTP 401 from x")
 
+    def gh_fail():
+        raise click.ClickException("gh not found")
+
     monkeypatch.setattr(jira, "in_progress_issues", fail)
-    get(base + "/refresh")
-    page = get(base + "/")
-    assert "jira: HTTP 401 from x" in page and "your PRs" in page
+    monkeypatch.setattr(pr, "authored_prs", gh_fail)
+    get(base + "/refresh?table=jira")
+    page = get(base + "/refresh?table=mine")
+    assert "jira: HTTP 401 from x" in page and "github: gh not found" in page
 
 
 def test_post_review_opens_and_redirects(serve):
     base, _, reviews, parent = serve
-    data = urlencode({"repo": "acme/api", "number": "7", "all": "1"}).encode()
+    get(base + "/refresh?table=review")
+    data = urlencode({"repo": "acme/api", "number": "7"}).encode()
     page = get(urllib.request.Request(base + "/review", data=data))
     assert reviews == [("acme/api", 7, parent)]
     assert "opened acme/api#7" in page
-    assert page.count('<tr class="pr">') == 7
+    assert page.count('<tr class="pr"') == 4
 
 
 def test_post_review_shows_errors(serve, monkeypatch):
@@ -123,7 +142,7 @@ def test_post_review_shows_errors(serve, monkeypatch):
 
 
 def test_render_page_mine_buttons():
-    page = server.render_page({False: PRS, True: PRS[:3]}, show_all=True)
+    page = server.render_page({"review": PRS, "mine": PRS[:3]})
     # one ready button for the draft, auto-merge for the other two of yours
     assert page.count('action="/ready"') == 1
     assert page.count('action="/automerge"') == 2
@@ -135,15 +154,17 @@ def test_post_mine_actions(serve, monkeypatch):
     calls = []
     monkeypatch.setattr(pr, "mark_ready", lambda *args: calls.append(("ready", *args)))
     monkeypatch.setattr(pr, "enable_auto_merge", lambda *args: calls.append(("auto", *args)))
-    get(base + "/")
-    data = urlencode({"repo": "acme/api", "number": "9", "all": "1"}).encode()
+    data = urlencode({"repo": "acme/api", "number": "9"}).encode()
     page = get(urllib.request.Request(base + "/ready", data=data))
     assert "marked acme/api#9 ready for review" in page
     data = urlencode({"repo": "acme/api", "number": "7"}).encode()
-    assert "enabled auto-merge on acme/api#7" in get(urllib.request.Request(base + "/automerge", data=data))
+    page = get(urllib.request.Request(base + "/automerge", data=data))
+    assert "enabled auto-merge on acme/api#7" in page
     assert calls == [("ready", "acme/api", 9), ("auto", "acme/api", 7)]
-    # your PRs are refetched after each action
-    assert fetched.count("mine") == 3
+    # your PRs are fetched once if needed, then updated in place
+    assert fetched == ["mine"]
+    # the PR marked ready now offers auto-merge
+    assert 'value="9"><button>auto-merge</button>' in page
     # PRs that aren't yours are refused
     data = urlencode({"repo": "acme/api", "number": "5"}).encode()
     page = get(urllib.request.Request(base + "/automerge", data=data))
