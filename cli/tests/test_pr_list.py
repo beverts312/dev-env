@@ -131,9 +131,10 @@ def fake_gh(monkeypatch, results):
     return slept
 
 
-def test_search_prs_retries_rate_limits(monkeypatch):
+def test_search_prs_retries_rate_limits_and_gateway_errors(monkeypatch):
     out = json.dumps({"data": {"search": {"nodes": []}}})
-    slept = fake_gh(monkeypatch, [LIMITED, LIMITED, subprocess.CompletedProcess([], 0, stdout=out)])
+    bad_gateway = subprocess.CompletedProcess([], 1, stdout="", stderr="HTTP 502: Bad Gateway (https://api.github.com/graphql)")
+    slept = fake_gh(monkeypatch, [LIMITED, bad_gateway, subprocess.CompletedProcess([], 0, stdout=out)])
     assert github.review_requests() == []
     assert slept == [2, 4]
 

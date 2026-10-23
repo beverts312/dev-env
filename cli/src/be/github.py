@@ -48,25 +48,28 @@ def clone_or_reuse(slug: str, dest: Path) -> None:
         raise click.exceptions.Exit(code)
 
 
-# seconds to wait before each retry of a gh call GitHub rate-limited
+# seconds to wait before each retry of a gh call GitHub rate-limited or failed with a 5xx
 RETRY_DELAYS = (2, 4, 8, 16)
 
+# rate limits, and the gateway errors GitHub returns when a query times out
+RETRYABLE = ("rate limit", "too quickly", "http 502", "http 503", "http 504")
 
-def rate_limited(result: subprocess.CompletedProcess) -> bool:
+
+def retryable(result: subprocess.CompletedProcess) -> bool:
     output = f"{result.stderr or ''} {result.stdout or ''}".lower()
-    return "rate limit" in output or "too quickly" in output
+    return any(marker in output for marker in RETRYABLE)
 
 
 def run_gh(*args: str) -> subprocess.CompletedProcess:
-    """Run gh, waiting and retrying while GitHub reports a rate limit."""
+    """Run gh, waiting and retrying while GitHub reports a rate limit or a gateway error."""
     for delay in (*RETRY_DELAYS, None):
         try:
             result = subprocess.run(["gh", *args], capture_output=True, text=True)
         except FileNotFoundError:
             raise click.ClickException("gh not found; install the GitHub CLI") from None
-        if result.returncode == 0 or delay is None or not rate_limited(result):
+        if result.returncode == 0 or delay is None or not retryable(result):
             return result
-        click.echo(f"GitHub rate limit hit; retrying in {delay}s", err=True)
+        click.echo(f"GitHub: {result.stderr.strip()}; retrying in {delay}s", err=True)
         time.sleep(delay)
 
 
@@ -83,7 +86,7 @@ query($q: String!) {
         author { login }
         repository { nameWithOwner squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed }
         commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
-        latestOpinionatedReviews(first: 100) { nodes { state } }
+        latestOpinionatedReviews(first: 20) { nodes { state } }
       }
     }
   }
