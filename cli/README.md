@@ -47,6 +47,12 @@ Combine them as `'./cli[backup,dns]'`.
 | `be pr clean [--parent DIR] [--dry-run] [-y]` |                        | Delete everything inside the PR directory, keeping the directory itself. It lists what it will remove and asks first. It refuses to run if no PR directory is configured, or if the directory is `/`, your home directory, or a parent of it. Symlinks are removed, not followed |
 | `be pr list [-i] [-a] [-m] [--parent DIR]` | | List open PRs that request your review, directly or through a team (alias: `be pr ls`); `-m`/`--mine` lists open PRs you opened instead, with the same filters. By default only ready (non-draft) PRs with passing checks that aren't by Renovate (`renovate`) are shown, with a count of the hidden ones on stderr; `-a`/`--all` shows every PR. Shows columns for number, repo, author, combined check status (`pass`, `fail`, `pending`, `none`), and title. Uses `gh`. `-i` moves through the list; enter runs `be pr review` on the selected PR, `o` opens it on GitHub, `m` toggles between review requests and your PRs, `a` toggles the filters (like `--all`), `q` quits |
 
+### `be server`
+
+| Command | What it does |
+| ------- | ------------ |
+| `be server [--host H] [--port P] [--parent DIR] [--no-open]` | Serve a local web page (default `http://127.0.0.1:8765`, opened in your browser) with two tables matching `be pr ls` and `be pr ls --mine`. Each row has a review button (runs `be pr review`) and links to GitHub; `show all` toggles the filters and `refresh` fetches the lists again. Keys match `be pr ls -i`: `j`/`k` or arrows move, enter reviews, `o` opens on GitHub, `m` switches table, `a` toggles the filters |
+
 ### `be ws`
 
 | Command                                                                                      | Replaces                     | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |

@@ -12,6 +12,7 @@ from be.commands.dns import dns
 from be.commands.git import git
 from be.commands.kube import kube
 from be.commands.pr import pr
+from be.commands.server import server
 from be.commands.ws import ws
 
 
@@ -28,6 +29,7 @@ cli.add_command(dns)
 cli.add_command(git)
 cli.add_command(kube)
 cli.add_command(pr)
+cli.add_command(server)
 cli.add_command(ws)
 
 
