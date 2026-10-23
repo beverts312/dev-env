@@ -11,10 +11,10 @@ from be import jira
 from be.commands import pr, server
 
 PRS = [
-    {"number": 7, "repo": "acme/api", "title": "Fix <login>", "checks": "pass", "approvals": 2, "draft": False, "author": "dev", "approved": False, "auto_merge": False},
-    {"number": 1234, "repo": "acme/web-app", "title": "Add page", "checks": "fail", "approvals": 0, "draft": False, "author": "dev", "approved": False, "auto_merge": False},
-    {"number": 9, "repo": "acme/api", "title": "WIP", "checks": "pass", "approvals": 0, "draft": True, "author": "dev", "approved": False, "auto_merge": False},
-    {"number": 5, "repo": "acme/api", "title": "Bump", "checks": "pass", "approvals": 0, "draft": False, "author": "renovate", "approved": False, "auto_merge": False},
+    {"number": 7, "repo": "acme/api", "title": "Fix <login>", "checks": "pass", "approvals": 2, "draft": False, "author": "dev", "approved": False, "auto_merge": False, "merge_flag": "--squash"},
+    {"number": 1234, "repo": "acme/web-app", "title": "Add page", "checks": "fail", "approvals": 0, "draft": False, "author": "dev", "approved": False, "auto_merge": False, "merge_flag": "--squash"},
+    {"number": 9, "repo": "acme/api", "title": "WIP", "checks": "pass", "approvals": 0, "draft": True, "author": "dev", "approved": False, "auto_merge": False, "merge_flag": "--squash"},
+    {"number": 5, "repo": "acme/api", "title": "Bump", "checks": "pass", "approvals": 0, "draft": False, "author": "renovate", "approved": False, "auto_merge": False, "merge_flag": "--squash"},
 ]
 
 
@@ -205,7 +205,7 @@ def test_post_merge_removes_row(serve, monkeypatch):
     assert 'value="7"><button>merge</button>' in page
     data = urlencode({"repo": "acme/api", "number": "7"}).encode()
     page = get(urllib.request.Request(base + "/merge", data=data))
-    assert "merged acme/api#7" in page and calls == [("acme/api", 7)]
+    assert "merged acme/api#7" in page and calls == [("acme/api", 7, "--squash")]
     assert "no open PRs by you" in page
 
 
@@ -220,7 +220,7 @@ def test_post_mine_actions(serve, monkeypatch):
     data = urlencode({"repo": "acme/api", "number": "7"}).encode()
     page = get(urllib.request.Request(base + "/automerge", data=data))
     assert "enabled auto-merge on acme/api#7" in page
-    assert calls == [("ready", "acme/api", 9), ("auto", "acme/api", 7)]
+    assert calls == [("ready", "acme/api", 9), ("auto", "acme/api", 7, "--squash")]
     # your PRs are fetched once if needed, then updated in place
     assert fetched == ["mine"]
     # the PR marked ready now offers auto-merge

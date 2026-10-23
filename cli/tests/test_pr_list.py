@@ -11,10 +11,10 @@ from be.cli import cli
 from be.commands import pr
 
 PRS = [
-    {"number": 7, "repo": "acme/api", "title": "Fix login", "checks": "pass", "approvals": 2, "draft": False, "author": "dev", "approved": False, "auto_merge": False},
-    {"number": 1234, "repo": "acme/web-app", "title": "Add page", "checks": "fail", "approvals": 0, "draft": False, "author": "dev", "approved": False, "auto_merge": False},
-    {"number": 9, "repo": "acme/api", "title": "WIP", "checks": "pass", "approvals": 0, "draft": True, "author": "dev", "approved": False, "auto_merge": False},
-    {"number": 5, "repo": "acme/api", "title": "Bump", "checks": "pass", "approvals": 0, "draft": False, "author": "renovate", "approved": False, "auto_merge": False},
+    {"number": 7, "repo": "acme/api", "title": "Fix login", "checks": "pass", "approvals": 2, "draft": False, "author": "dev", "approved": False, "auto_merge": False, "merge_flag": "--squash"},
+    {"number": 1234, "repo": "acme/web-app", "title": "Add page", "checks": "fail", "approvals": 0, "draft": False, "author": "dev", "approved": False, "auto_merge": False, "merge_flag": "--squash"},
+    {"number": 9, "repo": "acme/api", "title": "WIP", "checks": "pass", "approvals": 0, "draft": True, "author": "dev", "approved": False, "auto_merge": False, "merge_flag": "--squash"},
+    {"number": 5, "repo": "acme/api", "title": "Bump", "checks": "pass", "approvals": 0, "draft": False, "author": "renovate", "approved": False, "auto_merge": False, "merge_flag": "--squash"},
 ]
 
 
@@ -28,7 +28,7 @@ def test_review_requests_parses_graphql(monkeypatch):
             "author": {"login": "renovate"} if number == 2 else None,
             "number": number,
             "title": f"t{number}",
-            "repository": {"nameWithOwner": repo},
+            "repository": {"nameWithOwner": repo, "squashMergeAllowed": repo == "b/x", "rebaseMergeAllowed": True},
             "commits": {"nodes": commits},
             "latestOpinionatedReviews": {"nodes": [{"state": "APPROVED"}] * (number % 3) + [{"state": "CHANGES_REQUESTED"}]},
         }
@@ -39,12 +39,12 @@ def test_review_requests_parses_graphql(monkeypatch):
         subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, stdout=out)
     )
     assert [
-        (p["repo"], p["number"], p["checks"], p["approvals"], p["draft"], p["author"], p["approved"], p["auto_merge"])
+        (p["repo"], p["number"], p["checks"], p["approvals"], p["draft"], p["author"], p["approved"], p["auto_merge"], p["merge_flag"])
         for p in github.review_requests()
     ] == [
-        ("a/y", 3, "pending", 0, False, "", True, False),
-        ("a/y", 9, "none", 0, True, "", False, False),
-        ("b/x", 2, "fail", 2, False, "renovate", False, True),
+        ("a/y", 3, "pending", 0, False, "", True, False, "--rebase"),
+        ("a/y", 9, "none", 0, True, "", False, False, "--rebase"),
+        ("b/x", 2, "fail", 2, False, "renovate", False, True, "--squash"),
     ]
 
 
@@ -187,22 +187,35 @@ def test_same_login():
 
 def test_mark_ready_and_auto_merge_call_gh(monkeypatch):
     calls = []
-    settings = json.dumps(
-        {"squashMergeAllowed": False, "mergeCommitAllowed": True, "rebaseMergeAllowed": True}
-    )
 
     def run(cmd, **kw):
         calls.append(cmd)
-        out = settings if cmd[1:3] == ["repo", "view"] else ""
-        return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     monkeypatch.setattr(subprocess, "run", run)
     github.mark_ready("acme/api", 9)
-    github.enable_auto_merge("acme/api", 7)
-    github.merge("acme/api", 8)
-    assert calls[0] == ["gh", "pr", "ready", "9", "--repo", "acme/api"]
-    assert calls[2] == ["gh", "pr", "merge", "7", "--repo", "acme/api", "--auto", "--merge"]
-    assert calls[4] == ["gh", "pr", "merge", "8", "--repo", "acme/api", "--merge"]
+    github.enable_auto_merge("acme/api", 7, "--merge")
+    github.merge("acme/api", 8, "--rebase")
+    # the merge flag comes from the search, so no repo lookup is made
+    assert calls == [
+        ["gh", "pr", "ready", "9", "--repo", "acme/api"],
+        ["gh", "pr", "merge", "7", "--repo", "acme/api", "--auto", "--merge"],
+        ["gh", "pr", "merge", "8", "--repo", "acme/api", "--rebase"],
+    ]
+
+
+def test_merge_flag():
+    assert github.merge_flag({"squashMergeAllowed": True, "mergeCommitAllowed": True}) == "--squash"
+    assert github.merge_flag({"squashMergeAllowed": False, "rebaseMergeAllowed": True}) == "--rebase"
+    assert github.merge_flag({"nameWithOwner": "acme/api"}) is None
+
+
+def test_merge_without_allowed_method_raises(monkeypatch):
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: 1 / 0)
+    with pytest.raises(click.ClickException, match="allows no merge method"):
+        github.merge("acme/api", 8, None)
+    with pytest.raises(click.ClickException, match="allows no merge method"):
+        github.enable_auto_merge("acme/api", 8, None)
 
 
 def test_gh_failure_raises(monkeypatch):
@@ -212,22 +225,23 @@ def test_gh_failure_raises(monkeypatch):
         lambda cmd, **kw: subprocess.CompletedProcess(cmd, 1, stdout="", stderr="auto-merge is not allowed"),
     )
     with pytest.raises(click.ClickException, match="auto-merge is not allowed"):
-        github.enable_auto_merge("acme/api", 7)
+        github.enable_auto_merge("acme/api", 7, "--squash")
 
 
 def test_run_mine_action(monkeypatch):
     calls = []
     monkeypatch.setattr(pr, "mark_ready", lambda *args: calls.append(("ready", *args)))
     monkeypatch.setattr(pr, "enable_auto_merge", lambda *args: calls.append(("auto", *args)))
-    draft, ready = PRS[2], PRS[0]
+    draft, ready = dict(PRS[2]), dict(PRS[0])
+    assert pr.run_mine_action("automerge", draft) == "acme/api#9 is a draft; mark it ready first"
     assert pr.run_mine_action("ready", draft) == "marked acme/api#9 ready for review"
+    # the row is updated in place
+    assert not draft["draft"]
     assert pr.run_mine_action("ready", ready) == "acme/api#7 is not a draft"
     assert pr.run_mine_action("automerge", ready) == "enabled auto-merge on acme/api#7"
-    assert pr.run_mine_action("automerge", draft) == "acme/api#9 is a draft; mark it ready first"
-    assert calls == [("ready", "acme/api", 9), ("auto", "acme/api", 7)]
-    assert pr.run_mine_action("automerge", {**ready, "auto_merge": True}) == (
-        "auto-merge is already enabled on acme/api#7"
-    )
+    assert ready["auto_merge"]
+    assert calls == [("ready", "acme/api", 9), ("auto", "acme/api", 7, "--squash")]
+    assert pr.run_mine_action("automerge", ready) == "auto-merge is already enabled on acme/api#7"
     assert len(calls) == 2
 
 
@@ -240,13 +254,14 @@ def test_run_mine_action_merge(monkeypatch):
         "acme/api#9 is a draft; mark it ready first"
     )
     assert pr.run_mine_action("merge", {**ready, "approved": True}) == "merged acme/api#7"
-    assert calls == [("acme/api", 7)]
+    assert calls == [("acme/api", 7, "--squash")]
 
 
 def test_pr_ls_interactive_mine_actions(monkeypatch):
     fetched = []
-    monkeypatch.setattr(pr, "authored_prs", lambda: fetched.append("mine") or PRS)
-    picks = [("ready", 2), ("automerge", 0), None]
+    rows = [dict(p) for p in PRS]
+    monkeypatch.setattr(pr, "authored_prs", lambda: fetched.append("mine") or rows)
+    picks = [("ready", 2), ("automerge", 2), ("automerge", 0), None]
     shown = []
 
     def choose(rows, index=0, hint="", actions=()):
@@ -257,19 +272,42 @@ def test_pr_ls_interactive_mine_actions(monkeypatch):
     calls = []
     monkeypatch.setattr(pr, "mark_ready", lambda *args: calls.append(("ready", *args)))
 
-    def auto(*args):
-        raise click.ClickException("auto-merge is not allowed")
+    def auto(slug, number, flag):
+        if number == 7:
+            raise click.ClickException("auto-merge is not allowed")
+        calls.append(("auto", slug, number, flag))
 
     monkeypatch.setattr(pr, "enable_auto_merge", auto)
     result = CliRunner().invoke(cli, ["pr", "ls", "-i", "-m", "-a"])
     assert result.exit_code == 0, result.output
-    assert calls == [("ready", "acme/api", 9)]
+    # the draft marked ready can be set to auto-merge without a refetch
+    assert calls == [("ready", "acme/api", 9), ("auto", "acme/api", 9, "--squash")]
     assert "marked acme/api#9 ready for review" in result.output
+    assert "enabled auto-merge on acme/api#9" in result.output
     assert "error: auto-merge is not allowed" in result.output
-    # each action refetches the list
-    assert fetched == ["mine", "mine", "mine"]
+    # successful actions update the row in place; only the failure refetches
+    assert fetched == ["mine", "mine"]
     assert "r ready, u auto-merge" in shown[0][0]
     assert shown[0][1][-2:] == ("ready", "automerge")
+
+
+def test_pr_ls_interactive_merge_drops_row(monkeypatch):
+    rows = [{**PRS[0], "approved": True}]
+    monkeypatch.setattr(pr, "authored_prs", lambda: rows)
+    monkeypatch.setattr(pr, "merge", lambda *args: None)
+    picks = [(pr.MERGE_ACTION, 0), None]
+    shown = []
+
+    def choose(rows, index=0, hint="", actions=()):
+        shown.append(rows)
+        return picks.pop(0)
+
+    monkeypatch.setattr(pr, "choose", choose)
+    monkeypatch.setattr(pr, "MINE_ACTIONS", pr.MINE_ACTIONS + (pr.MERGE_ACTION,))
+    result = CliRunner().invoke(cli, ["pr", "ls", "-i", "-m", "-a"])
+    assert result.exit_code == 0, result.output
+    assert "merged acme/api#7" in result.output
+    assert rows == [] and shown[-1] == [pr.EMPTY[True]]
 
 
 def test_pr_ls_interactive_review_requests_have_no_mine_actions(monkeypatch):

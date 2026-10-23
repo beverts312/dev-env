@@ -58,7 +58,7 @@ query($q: String!) {
         reviewDecision
         autoMergeRequest { enabledAt }
         author { login }
-        repository { nameWithOwner }
+        repository { nameWithOwner squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed }
         commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
         latestOpinionatedReviews(first: 100) { nodes { state } }
       }
@@ -88,7 +88,7 @@ def authored_prs() -> list[dict]:
 
 def search_prs(qualifier: str) -> list[dict]:
     """Open PRs matching qualifier: number, repo, title, checks, approvals, draft, author,
-    whether it's approved, and whether auto-merge is enabled."""
+    whether it's approved, whether auto-merge is enabled, and the repo's merge flag."""
     query = f"is:pr is:open archived:false {qualifier}"
     try:
         result = subprocess.run(
@@ -124,6 +124,7 @@ def search_prs(qualifier: str) -> list[dict]:
                 "author": (node.get("author") or {}).get("login", ""),
                 "approved": node.get("reviewDecision") == "APPROVED",
                 "auto_merge": bool(node.get("autoMergeRequest")),
+                "merge_flag": merge_flag(node["repository"]),
             }
         )
     return sorted(prs, key=lambda pr: (pr["repo"], pr["number"]))
@@ -154,27 +155,29 @@ MERGE_METHODS = (
 )
 
 
-def merge_method(slug: str) -> str:
-    """The gh pr merge flag for the repo's preferred allowed merge method."""
-    fields = ",".join(field for field, _ in MERGE_METHODS)
-    try:
-        allowed = json.loads(gh("repo", "view", slug, "--json", fields))
-    except json.JSONDecodeError:
-        raise click.ClickException(f"gh returned unreadable settings for {slug}") from None
+def merge_flag(repo: dict) -> str | None:
+    """The gh pr merge flag for the repo's preferred allowed merge method, from its search
+    result, so merging needs no extra lookup."""
     for field, flag in MERGE_METHODS:
-        if allowed.get(field):
+        if repo.get(field):
             return flag
-    raise click.ClickException(f"{slug} allows no merge method")
+    return None
 
 
-def enable_auto_merge(slug: str, number: int) -> None:
-    """Merge the PR once its requirements pass, with the repo's preferred method."""
-    gh("pr", "merge", str(number), "--repo", slug, "--auto", merge_method(slug))
+def require_flag(slug: str, flag: str | None) -> str:
+    if not flag:
+        raise click.ClickException(f"{slug} allows no merge method")
+    return flag
 
 
-def merge(slug: str, number: int) -> None:
-    """Merge the PR now, with the repo's preferred method."""
-    gh("pr", "merge", str(number), "--repo", slug, merge_method(slug))
+def enable_auto_merge(slug: str, number: int, flag: str | None) -> None:
+    """Merge the PR once its requirements pass, with the merge flag from merge_flag."""
+    gh("pr", "merge", str(number), "--repo", slug, "--auto", require_flag(slug, flag))
+
+
+def merge(slug: str, number: int, flag: str | None) -> None:
+    """Merge the PR now, with the merge flag from merge_flag."""
+    gh("pr", "merge", str(number), "--repo", slug, require_flag(slug, flag))
 
 
 def same_login(a: str, b: str) -> bool:

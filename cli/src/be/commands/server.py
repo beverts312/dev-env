@@ -421,14 +421,10 @@ def make_handler(parent: str | None) -> type[BaseHTTPRequestHandler]:
             except click.ClickException as e:
                 message = f"{repo}#{number}: {e.format_message()}"
             else:
-                # update the row in place rather than refetching the table, so a
-                # PR marked ready offers auto-merge next, and one set to auto-merge
-                # or merged offers nothing
-                if action == "ready":
-                    found[0]["draft"] = False
-                elif action == "automerge":
-                    found[0]["auto_merge"] = True
-                elif message.startswith("merged"):
+                # run_mine_action updates the row in place rather than us refetching
+                # the table, so a PR marked ready offers auto-merge next, and one set
+                # to auto-merge offers nothing; a merged one is dropped
+                if message.startswith("merged"):
                     mine.remove(found[0])
             self.redirect(message)
 

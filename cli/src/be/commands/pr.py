@@ -165,12 +165,15 @@ MERGE_ACTION = "merge"
 
 
 def run_mine_action(action: str, p: dict) -> str:
-    """Mark p ready, enable auto-merge on it, or merge it; returns what happened."""
+    """Mark p ready, enable auto-merge on it, or merge it; returns what happened.
+
+    p is updated in place so callers needn't refetch; removing a merged PR is theirs."""
     name = f"{p['repo']}#{p['number']}"
     if action == "ready":
         if not p["draft"]:
             return f"{name} is not a draft"
         mark_ready(p["repo"], p["number"])
+        p["draft"] = False
         return f"marked {name} ready for review"
     # GitHub won't auto-merge or merge a draft
     if p["draft"]:
@@ -178,11 +181,12 @@ def run_mine_action(action: str, p: dict) -> str:
     if action == MERGE_ACTION:
         if not p["approved"]:
             return f"{name} is not approved"
-        merge(p["repo"], p["number"])
+        merge(p["repo"], p["number"], p["merge_flag"])
         return f"merged {name}"
     if p["auto_merge"]:
         return f"auto-merge is already enabled on {name}"
-    enable_auto_merge(p["repo"], p["number"])
+    enable_auto_merge(p["repo"], p["number"], p["merge_flag"])
+    p["auto_merge"] = True
     return f"enabled auto-merge on {name}"
 
 
@@ -267,11 +271,16 @@ def list_prs(parent: str | None, interactive: bool | None, show_all: bool, mine:
             continue
         if action in MINE_ACTIONS:
             try:
-                click.echo(run_mine_action(action, prs[index]))
+                message = run_mine_action(action, prs[index])
             except click.ClickException as e:
                 click.echo(f"error: {e.format_message()}", err=True)
-            # drafts and checks may have changed
-            del fetched[mine]
+                # the list may be stale
+                del fetched[mine]
+                continue
+            click.echo(message)
+            # rows are updated in place, so only a merged PR needs dropping
+            if message.startswith("merged"):
+                fetched[mine].remove(prs[index])
             continue
         if action == "open":
             open_review(prs[index]["repo"], prs[index]["number"], parent)
