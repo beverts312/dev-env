@@ -55,6 +55,8 @@ query($q: String!) {
         number
         title
         isDraft
+        reviewDecision
+        autoMergeRequest { enabledAt }
         author { login }
         repository { nameWithOwner }
         commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
@@ -84,7 +86,8 @@ def authored_prs() -> list[dict]:
 
 
 def search_prs(qualifier: str) -> list[dict]:
-    """Open PRs matching qualifier: number, repo, title, checks, draft and author."""
+    """Open PRs matching qualifier: number, repo, title, checks, draft, author, whether
+    it's approved, and whether auto-merge is enabled."""
     query = f"is:pr is:open archived:false {qualifier}"
     try:
         result = subprocess.run(
@@ -115,6 +118,8 @@ def search_prs(qualifier: str) -> list[dict]:
                 "checks": CHECK_STATES.get(state, "none"),
                 "draft": bool(node.get("isDraft")),
                 "author": (node.get("author") or {}).get("login", ""),
+                "approved": node.get("reviewDecision") == "APPROVED",
+                "auto_merge": bool(node.get("autoMergeRequest")),
             }
         )
     return sorted(prs, key=lambda pr: (pr["repo"], pr["number"]))
@@ -161,6 +166,11 @@ def merge_method(slug: str) -> str:
 def enable_auto_merge(slug: str, number: int) -> None:
     """Merge the PR once its requirements pass, with the repo's preferred method."""
     gh("pr", "merge", str(number), "--repo", slug, "--auto", merge_method(slug))
+
+
+def merge(slug: str, number: int) -> None:
+    """Merge the PR now, with the repo's preferred method."""
+    gh("pr", "merge", str(number), "--repo", slug, merge_method(slug))
 
 
 def same_login(a: str, b: str) -> bool:

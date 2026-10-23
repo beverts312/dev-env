@@ -11,10 +11,10 @@ from be.cli import cli
 from be.commands import pr
 
 PRS = [
-    {"number": 7, "repo": "acme/api", "title": "Fix login", "checks": "pass", "draft": False, "author": "dev"},
-    {"number": 1234, "repo": "acme/web-app", "title": "Add page", "checks": "fail", "draft": False, "author": "dev"},
-    {"number": 9, "repo": "acme/api", "title": "WIP", "checks": "pass", "draft": True, "author": "dev"},
-    {"number": 5, "repo": "acme/api", "title": "Bump", "checks": "pass", "draft": False, "author": "renovate"},
+    {"number": 7, "repo": "acme/api", "title": "Fix login", "checks": "pass", "draft": False, "author": "dev", "approved": False, "auto_merge": False},
+    {"number": 1234, "repo": "acme/web-app", "title": "Add page", "checks": "fail", "draft": False, "author": "dev", "approved": False, "auto_merge": False},
+    {"number": 9, "repo": "acme/api", "title": "WIP", "checks": "pass", "draft": True, "author": "dev", "approved": False, "auto_merge": False},
+    {"number": 5, "repo": "acme/api", "title": "Bump", "checks": "pass", "draft": False, "author": "renovate", "approved": False, "auto_merge": False},
 ]
 
 
@@ -23,6 +23,8 @@ def test_review_requests_parses_graphql(monkeypatch):
         commits = [{"commit": {"statusCheckRollup": {"state": state} if state else None}}]
         return {
             "isDraft": number == 9,
+            "reviewDecision": "APPROVED" if number == 3 else None,
+            "autoMergeRequest": {"enabledAt": "2026-01-01T00:00:00Z"} if number == 2 else None,
             "author": {"login": "renovate"} if number == 2 else None,
             "number": number,
             "title": f"t{number}",
@@ -36,12 +38,12 @@ def test_review_requests_parses_graphql(monkeypatch):
         subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, stdout=out)
     )
     assert [
-        (p["repo"], p["number"], p["checks"], p["draft"], p["author"])
+        (p["repo"], p["number"], p["checks"], p["draft"], p["author"], p["approved"], p["auto_merge"])
         for p in github.review_requests()
     ] == [
-        ("a/y", 3, "pending", False, ""),
-        ("a/y", 9, "none", True, ""),
-        ("b/x", 2, "fail", False, "renovate"),
+        ("a/y", 3, "pending", False, "", True, False),
+        ("a/y", 9, "none", True, "", False, False),
+        ("b/x", 2, "fail", False, "renovate", False, True),
     ]
 
 
@@ -196,8 +198,10 @@ def test_mark_ready_and_auto_merge_call_gh(monkeypatch):
     monkeypatch.setattr(subprocess, "run", run)
     github.mark_ready("acme/api", 9)
     github.enable_auto_merge("acme/api", 7)
+    github.merge("acme/api", 8)
     assert calls[0] == ["gh", "pr", "ready", "9", "--repo", "acme/api"]
     assert calls[2] == ["gh", "pr", "merge", "7", "--repo", "acme/api", "--auto", "--merge"]
+    assert calls[4] == ["gh", "pr", "merge", "8", "--repo", "acme/api", "--merge"]
 
 
 def test_gh_failure_raises(monkeypatch):
@@ -220,6 +224,22 @@ def test_run_mine_action(monkeypatch):
     assert pr.run_mine_action("automerge", ready) == "enabled auto-merge on acme/api#7"
     assert pr.run_mine_action("automerge", draft) == "acme/api#9 is a draft; mark it ready first"
     assert calls == [("ready", "acme/api", 9), ("auto", "acme/api", 7)]
+    assert pr.run_mine_action("automerge", {**ready, "auto_merge": True}) == (
+        "auto-merge is already enabled on acme/api#7"
+    )
+    assert len(calls) == 2
+
+
+def test_run_mine_action_merge(monkeypatch):
+    calls = []
+    monkeypatch.setattr(pr, "merge", lambda *args: calls.append(args))
+    ready = PRS[0]
+    assert pr.run_mine_action("merge", ready) == "acme/api#7 is not approved"
+    assert pr.run_mine_action("merge", {**PRS[2], "approved": True}) == (
+        "acme/api#9 is a draft; mark it ready first"
+    )
+    assert pr.run_mine_action("merge", {**ready, "approved": True}) == "merged acme/api#7"
+    assert calls == [("acme/api", 7)]
 
 
 def test_pr_ls_interactive_mine_actions(monkeypatch):

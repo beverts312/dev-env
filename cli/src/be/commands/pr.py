@@ -16,6 +16,7 @@ from be.github import (
     clone_or_reuse,
     enable_auto_merge,
     mark_ready,
+    merge,
     repo_slug,
     review_requests,
     same_login,
@@ -150,19 +151,28 @@ def fetch_prs(mine: bool) -> list[dict]:
 
 # actions on your own PRs, offered in pr ls -i --mine and be server
 MINE_ACTIONS = ("ready", "automerge")
+# be server also offers merging your approved PRs
+MERGE_ACTION = "merge"
 
 
 def run_mine_action(action: str, p: dict) -> str:
-    """Mark p ready or enable auto-merge on it; returns what happened."""
+    """Mark p ready, enable auto-merge on it, or merge it; returns what happened."""
     name = f"{p['repo']}#{p['number']}"
     if action == "ready":
         if not p["draft"]:
             return f"{name} is not a draft"
         mark_ready(p["repo"], p["number"])
         return f"marked {name} ready for review"
-    # GitHub won't auto-merge a draft
+    # GitHub won't auto-merge or merge a draft
     if p["draft"]:
         return f"{name} is a draft; mark it ready first"
+    if action == MERGE_ACTION:
+        if not p["approved"]:
+            return f"{name} is not approved"
+        merge(p["repo"], p["number"])
+        return f"merged {name}"
+    if p["auto_merge"]:
+        return f"auto-merge is already enabled on {name}"
     enable_auto_merge(p["repo"], p["number"])
     return f"enabled auto-merge on {name}"
 

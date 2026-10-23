@@ -143,7 +143,25 @@ draw();
 
 
 # POST path and button label for each action on your own PRs
-MINE_BUTTONS = (("ready", "ready"), ("automerge", "auto-merge"))
+MINE_BUTTONS = {"ready": "ready", "automerge": "auto-merge", pr.MERGE_ACTION: "merge"}
+# your PRs' actions, as POST paths
+MINE_PATHS = tuple(f"/{a}" for a in MINE_BUTTONS)
+
+
+def mine_actions(p: dict) -> list[str]:
+    """The actions offered on your PR p: only drafts can be marked ready, GitHub won't
+    auto-merge a draft, and nothing is offered once auto-merge is on; approved PRs
+    can be merged now."""
+    if p["draft"]:
+        return ["ready"]
+    if p["auto_merge"]:
+        return []
+    return ["automerge", pr.MERGE_ACTION] if p["approved"] else ["automerge"]
+
+
+def pr_header(mine: bool) -> tuple[str, ...]:
+    """pr.PR_HEADER, without the author on your PRs, which are all yours."""
+    return tuple(h for h in pr.PR_HEADER if not (mine and h == "AUTHOR"))
 
 
 def pr_form(action: str, label: str, repo: str, number: int) -> str:
@@ -194,27 +212,26 @@ NOT_LOADED = "not loaded; refresh to load"
 def pr_table(table: str, heading: str, prs: list[dict] | str | None) -> str:
     """A `pr ls` table; prs is None before it's loaded, or the error message when that failed."""
     mine = MINE[table]
-    colspan = len(pr.PR_HEADER) + 1
+    header = pr_header(mine)
+    colspan = len(header) + 1
     if not prs or isinstance(prs, str):
         if prs is None:
             message = NOT_LOADED
         else:
             message = f"github: {prs}" if prs else pr.EMPTY[mine]
-        rows = empty_row(pr.PR_HEADER, colspan, message)
+        rows = empty_row(header, colspan, message)
         return "\n".join(section(table, heading, PR_FILTERS, rows, search=True))
-    out = ["<tr>" + "".join(f"<th>{h}</th>" for h in pr.PR_HEADER) + "<th></th></tr>"]
+    out = ["<tr>" + "".join(f"<th>{h}</th>" for h in header) + "<th></th></tr>"]
     for p in prs:
         url = html.escape(pr.pr_url(p["repo"], p["number"]))
         repo = html.escape(p["repo"])
         forms = [pr_form("review", "review", repo, p["number"])]
         if mine:
-            # only drafts can be marked ready, and GitHub won't auto-merge a draft
-            action, label = MINE_BUTTONS[0] if p["draft"] else MINE_BUTTONS[1]
-            forms.append(pr_form(action, label, repo, p["number"]))
+            forms += [pr_form(a, MINE_BUTTONS[a], repo, p["number"]) for a in mine_actions(p)]
         cells = [
             f'<a href="{url}" target="_blank">#{p["number"]}</a>',
             repo,
-            html.escape(p["author"]),
+            *([] if mine else [html.escape(p["author"])]),
             html.escape(p["checks"]),
             html.escape(p["title"]),
             '<div class="actions">' + "".join(forms) + "</div>",
@@ -324,7 +341,7 @@ def make_handler(parent: str | None) -> type[BaseHTTPRequestHandler]:
 
         def do_POST(self) -> None:
             path = urlparse(self.path).path
-            if path not in ("/review", *(f"/{a}" for a in pr.MINE_ACTIONS)):
+            if path not in ("/review", *MINE_PATHS):
                 self.send_error(404)
                 return
             length = int(self.headers.get("Content-Length", 0))
@@ -358,9 +375,14 @@ def make_handler(parent: str | None) -> type[BaseHTTPRequestHandler]:
                 message = f"{repo}#{number}: {e.format_message()}"
             else:
                 # update the row in place rather than refetching the table, so a
-                # PR marked ready offers auto-merge next
+                # PR marked ready offers auto-merge next, and one set to auto-merge
+                # or merged offers nothing
                 if action == "ready":
                     found[0]["draft"] = False
+                elif action == "automerge":
+                    found[0]["auto_merge"] = True
+                elif message.startswith("merged"):
+                    mine.remove(found[0])
             self.redirect(message)
 
     return Handler
@@ -379,7 +401,8 @@ def server(parent: str | None, host: str, port: int, no_open: bool) -> None:
     """Serve a web page with the `pr ls` tables and the `jira ls` table.
 
     Each PR can be reviewed (as `pr review`) or opened on GitHub, and each of
-    your PRs marked ready (drafts) or set to auto-merge; each issue
+    your PRs marked ready (drafts), set to auto-merge, or merged (approved);
+    each issue
     opened in Jira. Each table loads when you click its refresh link, and its
     filter checkboxes apply in the page. Ctrl-C stops it.
     """

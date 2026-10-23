@@ -11,10 +11,10 @@ from be import jira
 from be.commands import pr, server
 
 PRS = [
-    {"number": 7, "repo": "acme/api", "title": "Fix <login>", "checks": "pass", "draft": False, "author": "dev"},
-    {"number": 1234, "repo": "acme/web-app", "title": "Add page", "checks": "fail", "draft": False, "author": "dev"},
-    {"number": 9, "repo": "acme/api", "title": "WIP", "checks": "pass", "draft": True, "author": "dev"},
-    {"number": 5, "repo": "acme/api", "title": "Bump", "checks": "pass", "draft": False, "author": "renovate"},
+    {"number": 7, "repo": "acme/api", "title": "Fix <login>", "checks": "pass", "draft": False, "author": "dev", "approved": False, "auto_merge": False},
+    {"number": 1234, "repo": "acme/web-app", "title": "Add page", "checks": "fail", "draft": False, "author": "dev", "approved": False, "auto_merge": False},
+    {"number": 9, "repo": "acme/api", "title": "WIP", "checks": "pass", "draft": True, "author": "dev", "approved": False, "auto_merge": False},
+    {"number": 5, "repo": "acme/api", "title": "Bump", "checks": "pass", "draft": False, "author": "renovate", "approved": False, "auto_merge": False},
 ]
 
 
@@ -149,6 +149,52 @@ def test_render_page_mine_buttons():
     assert page.count('action="/ready"') == 1
     assert page.count('action="/automerge"') == 2
     assert page.count('action="/review"') == 7
+    assert 'action="/merge"' not in page
+
+
+def test_render_page_mine_merge_and_author():
+    mine = [
+        {**PRS[0], "approved": True},
+        {**PRS[1], "approved": True, "auto_merge": True},
+        {**PRS[3], "auto_merge": True},
+    ]
+    page = server.render_page({"review": PRS, "mine": mine})
+    # approved gets merge alongside auto-merge; nothing once auto-merge is on
+    assert page.count('action="/merge"') == 1
+    assert page.count('action="/automerge"') == 1
+    assert 'value="7"><button>merge</button>' in page
+    # only the review requests table has an author column
+    assert page.count("<th>AUTHOR</th>") == 1
+    assert "<td>renovate</td>" in page.split('data-table="mine"')[0]
+    assert "<td>renovate</td>" not in page.split('data-table="mine"')[1]
+    assert "<th>AUTHOR</th>" not in server.render_page({"mine": []}).split('data-table="mine"')[1]
+
+
+def test_post_merge(serve, monkeypatch):
+    base, _, _, _ = serve
+    calls = []
+    monkeypatch.setattr(pr, "merge", lambda *args: calls.append(args))
+    monkeypatch.setattr(pr, "enable_auto_merge", lambda *args: calls.append(("auto", *args)))
+    data = urlencode({"repo": "acme/api", "number": "7"}).encode()
+    page = get(urllib.request.Request(base + "/merge", data=data))
+    assert "acme/api#7 is not approved" in page and calls == []
+    # auto-merge hides the PR's buttons but keeps the row
+    page = get(urllib.request.Request(base + "/automerge", data=data))
+    assert 'value="7"><button>auto-merge</button>' not in page
+    assert page.count('<tr class="pr"') == 3
+
+
+def test_post_merge_removes_row(serve, monkeypatch):
+    base, _, _, _ = serve
+    monkeypatch.setattr(pr, "authored_prs", lambda: [{**PRS[0], "approved": True}])
+    calls = []
+    monkeypatch.setattr(pr, "merge", lambda *args: calls.append(args))
+    page = get(base + "/refresh?table=mine")
+    assert 'value="7"><button>merge</button>' in page
+    data = urlencode({"repo": "acme/api", "number": "7"}).encode()
+    page = get(urllib.request.Request(base + "/merge", data=data))
+    assert "merged acme/api#7" in page and calls == [("acme/api", 7)]
+    assert "no open PRs by you" in page
 
 
 def test_post_mine_actions(serve, monkeypatch):
