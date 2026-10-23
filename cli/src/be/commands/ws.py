@@ -105,6 +105,12 @@ def selection_action(index: int, count: int, key: str) -> tuple[int, str]:
         return index, "get"
     if key in ("j", "J"):
         return index, "jira"
+    if key in ("o", "O"):
+        return index, "browse"
+    if key in ("m", "M"):
+        return index, "toggle"
+    if key in ("a", "A"):
+        return index, "all"
     if key == "\x03":
         return index, "abort"
     if key == "up":
@@ -143,10 +149,16 @@ def paint_list(names: list[str], index: int, *, redraw: bool, hint: str = LIST_H
     sys.stdout.flush()
 
 
-def choose(names: list[str], index: int = 0, hint: str = LIST_HINT) -> tuple[str, int] | None:
+def choose(
+    names: list[str],
+    index: int = 0,
+    hint: str = LIST_HINT,
+    actions: tuple[str, ...] = ("open", "get", "jira", "delete"),
+) -> tuple[str, int] | None:
     """Let the user move through names, starting at index.
 
-    Returns (action, index) for open, get, jira or delete, or None on quit.
+    Returns (action, index) for any action in actions, or None on quit; other
+    keys are ignored.
     """
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise click.ClickException("choosing from a list needs a terminal")
@@ -160,14 +172,13 @@ def choose(names: list[str], index: int = 0, hint: str = LIST_HINT) -> tuple[str
         painted = True
         while True:
             index, action = selection_action(index, len(names), read_key(fd))
-            if action in ("open", "get", "jira", "delete"):
+            if action in actions:
                 return action, index
             if action == "quit":
                 return None
             if action == "abort":
                 raise click.Abort()
-            if action == "stay":
-                paint_list(names, index, redraw=True, hint=hint)
+            paint_list(names, index, redraw=True, hint=hint)
     finally:
         sys.stdout.write("\x1b[?25h")
         if painted:

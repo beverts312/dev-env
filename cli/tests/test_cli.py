@@ -575,6 +575,9 @@ def test_selection_enter_opens_current_row():
     assert ws.selection_action(1, 3, "d") == (1, "delete")
     assert ws.selection_action(1, 3, "g") == (1, "get")
     assert ws.selection_action(1, 3, "j") == (1, "jira")
+    assert ws.selection_action(1, 3, "o") == (1, "browse")
+    assert ws.selection_action(1, 3, "m") == (1, "toggle")
+    assert ws.selection_action(1, 3, "a") == (1, "all")
 
 
 def test_read_key_arrow():
