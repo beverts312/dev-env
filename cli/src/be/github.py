@@ -115,8 +115,13 @@ CHECK_STATES = {
 
 
 def review_requests() -> list[dict]:
-    """Open PRs that request your review."""
-    return search_prs("review-requested:@me")
+    """Open PRs that request your review by name."""
+    return search_prs("user-review-requested:@me")
+
+
+def team_review_requests() -> list[dict]:
+    """Open PRs that request your review only through a team."""
+    return search_prs("review-requested:@me -user-review-requested:@me")
 
 
 def authored_prs() -> list[dict]:

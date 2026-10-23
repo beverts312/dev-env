@@ -20,13 +20,22 @@ from be.github import (
     repo_slug,
     review_requests,
     same_login,
+    team_review_requests,
 )
 
 PR_GROUP = "prs"
 # GraphQL reports the Renovate app as "renovate"; its PRs are hidden by default
 RENOVATE_USER = "renovate"
-# what pr ls says when a list is empty, keyed by --mine
-EMPTY = {False: "no review requests", True: "no open PRs by you"}
+# the lists pr ls shows, in the order tab cycles through them in pr ls -i
+KINDS = ("review", "team", "mine")
+# what pr ls says when a list is empty, keyed by kind
+EMPTY = {
+    "review": "no review requests",
+    "team": "no team review requests",
+    "mine": "no open PRs by you",
+}
+# each list's name in the pr ls -i hint
+TITLES = {"review": "review requests", "team": "team review requests", "mine": "your PRs"}
 
 
 @click.group()
@@ -159,14 +168,17 @@ def filter_prs(prs: list[dict], show_all: bool) -> tuple[list[dict], int]:
     return shown, len(prs) - len(shown)
 
 
-def fetch_prs(mine: bool) -> list[dict]:
-    return authored_prs() if mine else review_requests()
+def fetch_prs(kind: str) -> list[dict]:
+    if kind == "mine":
+        return authored_prs()
+    if kind == "team":
+        return team_review_requests()
+    return review_requests()
 
 
-# actions on your own PRs, offered in pr ls -i --mine and be server
-MINE_ACTIONS = ("ready", "automerge")
-# be server also offers merging your approved PRs
 MERGE_ACTION = "merge"
+# actions on your own PRs, offered in pr ls -i --mine and be server
+MINE_ACTIONS = ("ready", "automerge", MERGE_ACTION)
 
 
 def run_mine_action(action: str, p: dict) -> str:
@@ -206,8 +218,9 @@ def hidden_note(hidden: int) -> str:
     help="Parent folder to clone into when reviewing (default: current directory).",
 )
 @config.interactive_option(
-    "Select a PR; enter opens pr review, o opens it on GitHub, m toggles mine,"
-    " a toggles --all; on your PRs, r marks a draft ready and u enables auto-merge."
+    "Select a PR; enter opens pr review, o opens it on GitHub, tab cycles review requests,"
+    " team review requests and mine, a toggles --all; on your PRs, r marks a draft ready,"
+    " u enables auto-merge and m merges."
 )
 @click.option(
     "-a",
@@ -217,46 +230,52 @@ def hidden_note(hidden: int) -> str:
     help="Include drafts, PRs whose checks don't pass, and Renovate's PRs.",
 )
 @click.option("-m", "--mine", is_flag=True, help="List PRs you opened instead.")
-def list_prs(parent: str | None, interactive: bool | None, show_all: bool, mine: bool) -> None:
-    """List open PRs that request your review. Also available as ls.
+@click.option(
+    "-t", "--team", is_flag=True, help="List PRs that request your review only through a team."
+)
+def list_prs(
+    parent: str | None, interactive: bool | None, show_all: bool, mine: bool, team: bool
+) -> None:
+    """List open PRs that request your review by name. Also available as ls.
 
     Only ready PRs with passing checks, not by Renovate, are shown unless you
-    pass --all; the same applies with --mine.
+    pass --all; the same applies with --mine and --team.
     """
+    if mine and team:
+        raise click.UsageError("--mine and --team can't be used together")
+    kind = "mine" if mine else "team" if team else "review"
     interactive = config.interactive(interactive)
     if not interactive:
-        prs, hidden = filter_prs(fetch_prs(mine), show_all)
+        prs, hidden = filter_prs(fetch_prs(kind), show_all)
         if hidden:
             click.echo(hidden_note(hidden), err=True)
         if not prs:
-            click.echo(EMPTY[mine])
+            click.echo(EMPTY[kind])
             return
         for row in pr_rows(prs, header=True, drafts=show_all):
             click.echo(row)
         return
-    # each list is fetched once, so toggling back is instant
-    fetched: dict[bool, list[dict]] = {}
+    # each list is fetched once, so cycling back is instant
+    fetched: dict[str, list[dict]] = {}
     index = 0
     while True:
-        if mine not in fetched:
-            fetched[mine] = fetch_prs(mine)
-        prs, hidden = filter_prs(fetched[mine], show_all)
-        title = "your PRs" if mine else "review requests"
+        if kind not in fetched:
+            fetched[kind] = fetch_prs(kind)
+        prs, hidden = filter_prs(fetched[kind], show_all)
+        title = TITLES[kind]
         if hidden:
             title += f" ({hidden} hidden)"
-        keys = (
-            f"m {'review requests' if mine else 'mine'},"
-            f" a {'filter' if show_all else 'show all'}"
-        )
+        following = KINDS[(KINDS.index(kind) + 1) % len(KINDS)]
+        keys = f"tab {TITLES[following]}, a {'filter' if show_all else 'show all'}"
         if prs:
             rows = pr_rows(prs, drafts=show_all)
-            mine_keys = "r ready, u auto-merge, " if mine else ""
+            mine_keys = "r ready, u auto-merge, m merge, " if kind == "mine" else ""
             hint = f"{title} · enter review, o open on GitHub, {mine_keys}{keys}, q quit"
             actions = ("open", "browse", "toggle", "all")
-            if mine:
+            if kind == "mine":
                 actions += MINE_ACTIONS
         else:
-            rows = [EMPTY[mine]]
+            rows = [EMPTY[kind]]
             hint = f"{title} · {keys}, q quit"
             actions = ("toggle", "all")
         chosen = choose(rows, min(index, len(rows) - 1), hint=hint, actions=actions)
@@ -264,7 +283,7 @@ def list_prs(parent: str | None, interactive: bool | None, show_all: bool, mine:
             return
         action, index = chosen
         if action == "toggle":
-            mine = not mine
+            kind = following
             index = 0
             continue
         if action == "all":
@@ -280,12 +299,12 @@ def list_prs(parent: str | None, interactive: bool | None, show_all: bool, mine:
             except click.ClickException as e:
                 click.echo(f"error: {e.format_message()}", err=True)
                 # the list may be stale
-                del fetched[mine]
+                del fetched[kind]
                 continue
             click.echo(message)
             # rows are updated in place, so only a merged PR needs dropping
             if message.startswith("merged"):
-                fetched[mine].remove(prs[index])
+                fetched[kind].remove(prs[index])
             continue
         if action == "open":
             open_review(prs[index]["repo"], prs[index]["number"], parent)

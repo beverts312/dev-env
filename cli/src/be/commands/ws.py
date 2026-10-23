@@ -107,8 +107,10 @@ def selection_action(index: int, count: int, key: str) -> tuple[int, str]:
         return index, "jira"
     if key in ("o", "O"):
         return index, "browse"
-    if key in ("m", "M"):
+    if key == "\t":
         return index, "toggle"
+    if key in ("m", "M"):
+        return index, "merge"
     if key in ("a", "A"):
         return index, "all"
     if key in ("r", "R"):

@@ -114,9 +114,11 @@ def test_search_prs_passes_qualifier(monkeypatch):
     monkeypatch.setattr(subprocess, "run", run)
     github.authored_prs()
     github.review_requests()
+    github.team_review_requests()
     assert [cmd[-1] for cmd in calls] == [
         "q=is:pr is:open archived:false author:@me",
-        "q=is:pr is:open archived:false review-requested:@me",
+        "q=is:pr is:open archived:false user-review-requested:@me",
+        "q=is:pr is:open archived:false review-requested:@me -user-review-requested:@me",
     ]
 
 
@@ -192,15 +194,35 @@ def test_pr_ls_mine_empty(monkeypatch):
     assert CliRunner().invoke(cli, ["pr", "ls", "--mine"]).output == "no open PRs by you\n"
 
 
-def test_pr_ls_interactive_toggles_mine(monkeypatch):
+def test_pr_ls_team(monkeypatch):
+    monkeypatch.setattr(pr, "team_review_requests", lambda: PRS)
+    monkeypatch.setattr(pr, "review_requests", lambda: 1 / 0)
+    result = CliRunner().invoke(cli, ["pr", "ls", "-t"])
+    assert result.exit_code == 0, result.output
+    assert result.output.splitlines()[-1] == "#7  acme/api  dev     pass    2          Fix login"
+
+
+def test_pr_ls_team_empty(monkeypatch):
+    monkeypatch.setattr(pr, "team_review_requests", lambda: [])
+    assert CliRunner().invoke(cli, ["pr", "ls", "--team"]).output == "no team review requests\n"
+
+
+def test_pr_ls_mine_and_team_conflict():
+    result = CliRunner().invoke(cli, ["pr", "ls", "-m", "-t"])
+    assert result.exit_code == 2
+    assert "--mine and --team can't be used together" in result.output
+
+
+def test_pr_ls_interactive_cycles_lists(monkeypatch):
     fetched = []
     monkeypatch.setattr(pr, "review_requests", lambda: fetched.append("review") or PRS)
+    monkeypatch.setattr(pr, "team_review_requests", lambda: fetched.append("team") or [])
     monkeypatch.setattr(pr, "authored_prs", lambda: fetched.append("mine") or [])
-    picks = [("toggle", 0), ("toggle", 0), ("browse", 0), None]
+    picks = [("toggle", 0), ("toggle", 0), ("toggle", 0), ("browse", 0), None]
     shown = []
 
     def choose(rows, index=0, hint="", actions=()):
-        shown.append((rows, actions))
+        shown.append((rows, hint, actions))
         return picks.pop(0)
 
     monkeypatch.setattr(pr, "choose", choose)
@@ -208,9 +230,11 @@ def test_pr_ls_interactive_toggles_mine(monkeypatch):
     monkeypatch.setattr(pr.click, "launch", lambda url: launched.append(url))
     result = CliRunner().invoke(cli, ["pr", "ls", "-i"])
     assert result.exit_code == 0, result.output
-    assert fetched == ["review", "mine"]
-    assert shown[1] == (["no open PRs by you"], ("toggle", "all"))
-    assert shown[2][0] == shown[0][0]
+    assert fetched == ["review", "team", "mine"]
+    assert "tab team review requests" in shown[0][1]
+    assert shown[1][0] == ["no team review requests"] and "tab your PRs" in shown[1][1]
+    assert shown[2] == (["no open PRs by you"], "your PRs · tab review requests, a show all, q quit", ("toggle", "all"))
+    assert shown[3][0] == shown[0][0]
     assert launched == ["https://github.com/acme/api/pull/7"]
 
 
@@ -340,8 +364,8 @@ def test_pr_ls_interactive_mine_actions(monkeypatch):
     assert "error: auto-merge is not allowed" in result.output
     # successful actions update the row in place; only the failure refetches
     assert fetched == ["mine", "mine"]
-    assert "r ready, u auto-merge" in shown[0][0]
-    assert shown[0][1][-2:] == ("ready", "automerge")
+    assert "r ready, u auto-merge, m merge" in shown[0][0]
+    assert shown[0][1][-3:] == ("ready", "automerge", "merge")
 
 
 def test_pr_ls_interactive_merge_drops_row(monkeypatch):
@@ -356,11 +380,10 @@ def test_pr_ls_interactive_merge_drops_row(monkeypatch):
         return picks.pop(0)
 
     monkeypatch.setattr(pr, "choose", choose)
-    monkeypatch.setattr(pr, "MINE_ACTIONS", pr.MINE_ACTIONS + (pr.MERGE_ACTION,))
     result = CliRunner().invoke(cli, ["pr", "ls", "-i", "-m", "-a"])
     assert result.exit_code == 0, result.output
     assert "merged acme/api#7" in result.output
-    assert rows == [] and shown[-1] == [pr.EMPTY[True]]
+    assert rows == [] and shown[-1] == [pr.EMPTY["mine"]]
 
 
 def test_pr_ls_interactive_review_requests_have_no_mine_actions(monkeypatch):
@@ -370,4 +393,5 @@ def test_pr_ls_interactive_review_requests_have_no_mine_actions(monkeypatch):
         pr, "choose", lambda rows, index=0, hint="", actions=(): shown.append((hint, actions))
     )
     CliRunner().invoke(cli, ["pr", "ls", "-i"])
-    assert "ready" not in shown[0][1] and "u auto-merge" not in shown[0][0]
+    assert "ready" not in shown[0][1] and "merge" not in shown[0][1]
+    assert "u auto-merge" not in shown[0][0] and "m merge" not in shown[0][0]

@@ -21,8 +21,8 @@ PRS = [
 
 def test_render_page_starts_empty():
     page = server.render_page({})
-    assert page.count(server.NOT_LOADED) == 3
-    for table in ("review", "mine", "jira"):
+    assert page.count(server.NOT_LOADED) == 4
+    for table in ("review", "team", "mine", "jira"):
         assert f'href="/refresh?table={table}"' in page
     assert '<tr class="pr"' not in page
 
@@ -35,22 +35,22 @@ def test_render_page_marks_rows_for_filters():
     assert '<tr class="pr" data-search="acme/api fix &lt;login&gt;" data-checks="pass" data-draft="no">' in page
     assert 'data-checks="fail" data-draft="no">' in page
     assert 'data-checks="pass" data-draft="yes">' in page
-    assert page.count('type="search"') == 2
+    assert page.count('type="search"') == 3
     assert 'data-hide="renovate"' in page
-    assert page.count('type="checkbox"') == 2 * len(server.PR_FILTERS) + len(server.ISSUE_FILTERS)
+    assert page.count('type="checkbox"') == 3 * len(server.PR_FILTERS) + len(server.ISSUE_FILTERS)
     # dropdowns default to what pr ls shows
-    assert page.count('<select name="checks" data-default="pass">') == 2
-    assert page.count('<select name="draft" data-default="no">') == 2
-    assert page.count('<option value="pass" selected>') == 2
-    assert page.count('<option value="all">') == 4
+    assert page.count('<select name="checks" data-default="pass">') == 3
+    assert page.count('<select name="draft" data-default="no">') == 3
+    assert page.count('<option value="pass" selected>') == 3
+    assert page.count('<option value="all">') == 6
     # their columns can be hidden, and the CSS hides them
-    assert page.count('<th class="col-checks">CHECKS</th>') == 2
+    assert page.count('<th class="col-checks">CHECKS</th>') == 3
     assert ".hide-checks .col-checks { display: none; }" in page
     assert "no open PRs by you" in page
     # titles are escaped
     assert "Fix &lt;login&gt;" in page and "<login>" not in page
     # the draft column is always rendered; the page hides it while the dropdown picks one value
-    assert page.count('<th class="col-draft">DRAFT</th>') == 2
+    assert page.count('<th class="col-draft">DRAFT</th>') == 3
     assert page.count('<td class="col-draft">yes</td>') == 1
     assert page.count('<td class="col-draft">no</td>') == 3
 
@@ -82,6 +82,7 @@ def test_render_page_message():
 def serve(monkeypatch, tmp_path):
     fetched = []
     monkeypatch.setattr(pr, "review_requests", lambda: fetched.append("review") or PRS)
+    monkeypatch.setattr(pr, "team_review_requests", lambda: fetched.append("team") or PRS[:2])
     monkeypatch.setattr(pr, "authored_prs", lambda: fetched.append("mine") or [dict(p) for p in PRS[:3]])
     monkeypatch.setattr(jira, "in_progress_issues", lambda: fetched.append("jira") or [])
     reviews = []
@@ -103,16 +104,20 @@ def test_get_loads_only_refreshed_tables(serve):
     base, fetched, _, _ = serve
     page = get(base + "/")
     assert fetched == []
-    assert page.count(server.NOT_LOADED) == 3
+    assert page.count(server.NOT_LOADED) == 4
     page = get(base + "/refresh?table=review")
     assert fetched == ["review"]
-    assert page.count('<tr class="pr"') == 4 and page.count(server.NOT_LOADED) == 2
+    assert page.count('<tr class="pr"') == 4 and page.count(server.NOT_LOADED) == 3
+    page = get(base + "/refresh?table=team")
+    assert fetched == ["review", "team"]
+    assert page.count('<tr class="pr"') == 6 and page.count(server.NOT_LOADED) == 2
+    assert "<td>Add page</td>" in page.split('data-table="team"')[1].split("<section")[0]
     # loaded tables are kept
     get(base + "/")
     get(base + "/refresh?table=jira")
-    assert fetched == ["review", "jira"]
+    assert fetched == ["review", "team", "jira"]
     get(base + "/refresh?table=review")
-    assert fetched == ["review", "jira", "review"]
+    assert fetched == ["review", "team", "jira", "review"]
     with pytest.raises(urllib.error.HTTPError):
         get(base + "/refresh?table=nope")
 
@@ -176,8 +181,8 @@ def test_render_page_mine_merge_and_author():
     assert page.count('action="/merge"') == 1
     assert page.count('action="/automerge"') == 1
     assert 'value="7"><button>merge</button>' in page
-    # only the review requests table has an author column
-    assert page.count("<th>AUTHOR</th>") == 1
+    # only the review request tables have an author column
+    assert page.count("<th>AUTHOR</th>") == 2
     assert "<td>renovate</td>" in page.split('data-table="mine"')[0]
     assert "<td>renovate</td>" not in page.split('data-table="mine"')[1]
     assert "<th>AUTHOR</th>" not in server.render_page({"mine": []}).split('data-table="mine"')[1]

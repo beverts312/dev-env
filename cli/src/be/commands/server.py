@@ -18,10 +18,13 @@ log = logging.getLogger(__name__)
 
 LOG_LEVELS = ("debug", "info", "warning", "error")
 
-# (id, heading) for each table, in page order
-TABLES = (("review", "review requests"), ("mine", "your PRs"), ("jira", "jira issues"))
-# which PR list each PR table shows, as pr.fetch_prs(mine)
-MINE = {"review": False, "mine": True}
+# (id, heading) for each table, in page order; a PR table's id is its pr.KINDS list
+TABLES = (
+    ("review", "review requests"),
+    ("team", "team review requests"),
+    ("mine", "your PRs"),
+    ("jira", "jira issues"),
+)
 
 # (key, options, default, value) for the PR tables' filter dropdowns, defaulting to what
 # pr.filter_prs shows: a row is hidden unless value(row) is the chosen option, or "all" is;
@@ -324,14 +327,14 @@ NOT_LOADED = "not loaded; refresh to load"
 
 def pr_table(table: str, heading: str, prs: list[dict] | str | None) -> str:
     """A `pr ls` table; prs is None before it's loaded, or the error message when that failed."""
-    mine = MINE[table]
+    mine = table == "mine"
     header = pr_header(mine)
     colspan = len(header) + 1
     if not prs or isinstance(prs, str):
         if prs is None:
             message = NOT_LOADED
         else:
-            message = f"github: {prs}" if prs else pr.EMPTY[mine]
+            message = f"github: {prs}" if prs else pr.EMPTY[table]
         rows = empty_row(header, colspan, message)
         return "\n".join(section(table, heading, PR_FILTERS, rows, search=True, selects=PR_SELECTS))
     out = [header_row(header, 1)]
@@ -427,7 +430,7 @@ def fetch_table(table: str) -> list[dict] | str:
         if table == "jira":
             rows = jira.in_progress_issues()
         else:
-            rows = pr.fetch_prs(MINE[table])
+            rows = pr.fetch_prs(table)
     except click.ClickException as e:
         message = e.format_message()
     except jira.JiraError as e:
