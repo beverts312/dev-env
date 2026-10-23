@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 from pathlib import Path
 
 import click
@@ -45,6 +46,28 @@ def clone_or_reuse(slug: str, dest: Path) -> None:
     code = clone(slug, dest)
     if code != 0:
         raise click.exceptions.Exit(code)
+
+
+# seconds to wait before each retry of a gh call GitHub rate-limited
+RETRY_DELAYS = (2, 4, 8, 16)
+
+
+def rate_limited(result: subprocess.CompletedProcess) -> bool:
+    output = f"{result.stderr or ''} {result.stdout or ''}".lower()
+    return "rate limit" in output or "too quickly" in output
+
+
+def run_gh(*args: str) -> subprocess.CompletedProcess:
+    """Run gh, waiting and retrying while GitHub reports a rate limit."""
+    for delay in (*RETRY_DELAYS, None):
+        try:
+            result = subprocess.run(["gh", *args], capture_output=True, text=True)
+        except FileNotFoundError:
+            raise click.ClickException("gh not found; install the GitHub CLI") from None
+        if result.returncode == 0 or delay is None or not rate_limited(result):
+            return result
+        click.echo(f"GitHub rate limit hit; retrying in {delay}s", err=True)
+        time.sleep(delay)
 
 
 PR_SEARCH = """
@@ -90,14 +113,7 @@ def search_prs(qualifier: str) -> list[dict]:
     """Open PRs matching qualifier: number, repo, title, checks, approvals, draft, author,
     whether it's approved, whether auto-merge is enabled, and the repo's merge flag."""
     query = f"is:pr is:open archived:false {qualifier}"
-    try:
-        result = subprocess.run(
-            ["gh", "api", "graphql", "-f", f"query={PR_SEARCH}", "-f", f"q={query}"],
-            capture_output=True,
-            text=True,
-        )
-    except FileNotFoundError:
-        raise click.ClickException("gh not found; install the GitHub CLI") from None
+    result = run_gh("api", "graphql", "-f", f"query={PR_SEARCH}", "-f", f"q={query}")
     if result.returncode != 0:
         raise click.ClickException(f"gh api graphql failed: {result.stderr.strip()}")
     try:
@@ -132,10 +148,7 @@ def search_prs(qualifier: str) -> list[dict]:
 
 def gh(*args: str) -> str:
     """Run gh and return its stdout, raising ClickException on failure."""
-    try:
-        result = subprocess.run(["gh", *args], capture_output=True, text=True)
-    except FileNotFoundError:
-        raise click.ClickException("gh not found; install the GitHub CLI") from None
+    result = run_gh(*args)
     if result.returncode != 0:
         message = result.stderr.strip() or result.stdout.strip()
         raise click.ClickException(f"gh {args[0]} {args[1]} failed: {message}")

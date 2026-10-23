@@ -120,6 +120,39 @@ def test_search_prs_passes_qualifier(monkeypatch):
     ]
 
 
+LIMITED = subprocess.CompletedProcess([], 1, stdout="", stderr="GraphQL: API rate limit exceeded for user")
+
+
+def fake_gh(monkeypatch, results):
+    """Make subprocess.run return results in turn and record the sleeps between them."""
+    slept = []
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: results.pop(0))
+    monkeypatch.setattr(github.time, "sleep", slept.append)
+    return slept
+
+
+def test_search_prs_retries_rate_limits(monkeypatch):
+    out = json.dumps({"data": {"search": {"nodes": []}}})
+    slept = fake_gh(monkeypatch, [LIMITED, LIMITED, subprocess.CompletedProcess([], 0, stdout=out)])
+    assert github.review_requests() == []
+    assert slept == [2, 4]
+
+
+def test_search_prs_gives_up_after_retries(monkeypatch):
+    slept = fake_gh(monkeypatch, [LIMITED] * 5)
+    with pytest.raises(click.ClickException, match="rate limit"):
+        github.review_requests()
+    assert slept == [2, 4, 8, 16]
+
+
+def test_gh_does_not_retry_other_failures(monkeypatch):
+    failed = subprocess.CompletedProcess([], 1, stdout="", stderr="HTTP 401: Bad credentials")
+    slept = fake_gh(monkeypatch, [failed])
+    with pytest.raises(click.ClickException, match="Bad credentials"):
+        github.mark_ready("acme/api", 7)
+    assert slept == []
+
+
 def test_pr_ls_mine_is_filtered(monkeypatch):
     monkeypatch.setattr(pr, "authored_prs", lambda: PRS)
     monkeypatch.setattr(pr, "review_requests", lambda: 1 / 0)
