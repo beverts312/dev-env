@@ -325,8 +325,11 @@ def make_handler(parent: str | None) -> type[BaseHTTPRequestHandler]:
                 message = pr.run_mine_action(action, found[0])
             except click.ClickException as e:
                 message = f"{repo}#{number}: {e.format_message()}"
-            # drafts and checks may have changed
-            loaded["mine"] = fetch_table("mine")
+            else:
+                # update the row in place rather than refetching the table, so a
+                # PR marked ready offers auto-merge next
+                if action == "ready":
+                    found[0]["draft"] = False
             self.redirect(message)
 
     return Handler

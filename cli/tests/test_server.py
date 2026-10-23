@@ -67,7 +67,7 @@ def test_render_page_message():
 def serve(monkeypatch, tmp_path):
     fetched = []
     monkeypatch.setattr(pr, "review_requests", lambda: fetched.append("review") or PRS)
-    monkeypatch.setattr(pr, "authored_prs", lambda: fetched.append("mine") or PRS[:3])
+    monkeypatch.setattr(pr, "authored_prs", lambda: fetched.append("mine") or [dict(p) for p in PRS[:3]])
     monkeypatch.setattr(jira, "in_progress_issues", lambda: fetched.append("jira") or [])
     reviews = []
     monkeypatch.setattr(pr, "open_review", lambda *args: reviews.append(args))
@@ -158,10 +158,13 @@ def test_post_mine_actions(serve, monkeypatch):
     page = get(urllib.request.Request(base + "/ready", data=data))
     assert "marked acme/api#9 ready for review" in page
     data = urlencode({"repo": "acme/api", "number": "7"}).encode()
-    assert "enabled auto-merge on acme/api#7" in get(urllib.request.Request(base + "/automerge", data=data))
+    page = get(urllib.request.Request(base + "/automerge", data=data))
+    assert "enabled auto-merge on acme/api#7" in page
     assert calls == [("ready", "acme/api", 9), ("auto", "acme/api", 7)]
-    # your PRs are fetched if needed, then again after each action
-    assert fetched == ["mine"] * 3
+    # your PRs are fetched once if needed, then updated in place
+    assert fetched == ["mine"]
+    # the PR marked ready now offers auto-merge
+    assert 'value="9"><button>auto-merge</button>' in page
     # PRs that aren't yours are refused
     data = urlencode({"repo": "acme/api", "number": "5"}).encode()
     page = get(urllib.request.Request(base + "/automerge", data=data))
