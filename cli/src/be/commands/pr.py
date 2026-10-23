@@ -11,7 +11,15 @@ import click
 
 from be import cmux, config
 from be.commands.ws import choose
-from be.github import authored_prs, clone_or_reuse, repo_slug, review_requests, same_login
+from be.github import (
+    authored_prs,
+    clone_or_reuse,
+    enable_auto_merge,
+    mark_ready,
+    repo_slug,
+    review_requests,
+    same_login,
+)
 
 PR_GROUP = "prs"
 # GraphQL reports the Renovate app as "renovate"; its PRs are hidden by default
@@ -140,6 +148,25 @@ def fetch_prs(mine: bool) -> list[dict]:
     return authored_prs() if mine else review_requests()
 
 
+# actions on your own PRs, offered in pr ls -i --mine and be server
+MINE_ACTIONS = ("ready", "automerge")
+
+
+def run_mine_action(action: str, p: dict) -> str:
+    """Mark p ready or enable auto-merge on it; returns what happened."""
+    name = f"{p['repo']}#{p['number']}"
+    if action == "ready":
+        if not p["draft"]:
+            return f"{name} is not a draft"
+        mark_ready(p["repo"], p["number"])
+        return f"marked {name} ready for review"
+    # GitHub won't auto-merge a draft
+    if p["draft"]:
+        return f"{name} is a draft; mark it ready first"
+    enable_auto_merge(p["repo"], p["number"])
+    return f"enabled auto-merge on {name}"
+
+
 def hidden_note(hidden: int) -> str:
     return f"{hidden} hidden (draft, not passing, or by {RENOVATE_USER}); --all shows them"
 
@@ -155,7 +182,7 @@ def hidden_note(hidden: int) -> str:
     "--interactive",
     is_flag=True,
     help="Select a PR; enter opens pr review, o opens it on GitHub, m toggles mine,"
-    " a toggles --all.",
+    " a toggles --all; on your PRs, r marks a draft ready and u enables auto-merge.",
 )
 @click.option(
     "-a",
@@ -197,8 +224,11 @@ def list_prs(parent: str | None, interactive: bool, show_all: bool, mine: bool) 
         )
         if prs:
             rows = pr_rows(prs)
-            hint = f"{title} · enter review, o open on GitHub, {keys}, q quit"
+            mine_keys = "r ready, u auto-merge, " if mine else ""
+            hint = f"{title} · enter review, o open on GitHub, {mine_keys}{keys}, q quit"
             actions = ("open", "browse", "toggle", "all")
+            if mine:
+                actions += MINE_ACTIONS
         else:
             rows = [EMPTY[mine]]
             hint = f"{title} · {keys}, q quit"
@@ -217,6 +247,14 @@ def list_prs(parent: str | None, interactive: bool, show_all: bool, mine: bool) 
             continue
         if action == "browse":
             click.launch(pr_url(prs[index]["repo"], prs[index]["number"]))
+            continue
+        if action in MINE_ACTIONS:
+            try:
+                click.echo(run_mine_action(action, prs[index]))
+            except click.ClickException as e:
+                click.echo(f"error: {e.format_message()}", err=True)
+            # drafts and checks may have changed
+            del fetched[mine]
             continue
         if action == "open":
             open_review(prs[index]["repo"], prs[index]["number"], parent)
