@@ -111,6 +111,10 @@ def selection_action(index: int, count: int, key: str) -> tuple[int, str]:
         return index, "toggle"
     if key in ("a", "A"):
         return index, "all"
+    if key in ("r", "R"):
+        return index, "ready"
+    if key in ("u", "U"):
+        return index, "automerge"
     if key == "\x03":
         return index, "abort"
     if key == "up":

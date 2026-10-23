@@ -578,6 +578,8 @@ def test_selection_enter_opens_current_row():
     assert ws.selection_action(1, 3, "o") == (1, "browse")
     assert ws.selection_action(1, 3, "m") == (1, "toggle")
     assert ws.selection_action(1, 3, "a") == (1, "all")
+    assert ws.selection_action(1, 3, "r") == (1, "ready")
+    assert ws.selection_action(1, 3, "u") == (1, "automerge")
 
 
 def test_read_key_arrow():

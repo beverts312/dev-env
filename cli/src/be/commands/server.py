@@ -21,6 +21,7 @@ table { border-collapse: collapse; margin-bottom: 24px; }
 th, td { text-align: left; padding: 2px 12px 2px 0; }
 tr.selected { background: #dde8ff; }
 form { margin: 0; }
+.actions { display: flex; gap: 4px; }
 .msg { padding: 4px 8px; background: #eee; }
 .keys { color: #666; }
 @media (prefers-color-scheme: dark) {
@@ -32,7 +33,7 @@ form { margin: 0; }
 """
 
 # keyboard parity with `pr ls -i`: arrows/j/k move, enter reviews (or opens an issue), o opens,
-# m switches table, a toggles all
+# m switches table, a toggles all, r marks your draft ready, u enables auto-merge
 SCRIPT = """
 const tables = [...document.querySelectorAll("table")];
 let t = 0, r = 0;
@@ -55,12 +56,31 @@ document.addEventListener("keydown", e => {
     if (form) form.submit(); else window.open(row.querySelector("a").href, "_blank");
     return;
   }
+  else if ((e.key === "r" || e.key === "u") && row) {
+    const form = row.querySelector(`form[action="/${e.key === "r" ? "ready" : "automerge"}"]`);
+    if (form) form.submit();
+    return;
+  }
   else return;
   e.preventDefault();
   draw();
 });
 draw();
 """
+
+
+# POST path and button label for each action on your own PRs
+MINE_BUTTONS = (("ready", "ready"), ("automerge", "auto-merge"))
+
+
+def pr_form(action: str, label: str, repo: str, number: int, show_all: bool) -> str:
+    return (
+        f'<form method="post" action="/{action}">'
+        f'<input type="hidden" name="repo" value="{repo}">'
+        f'<input type="hidden" name="number" value="{number}">'
+        f'<input type="hidden" name="all" value="{int(show_all)}">'
+        f"<button>{label}</button></form>"
+    )
 
 
 def pr_table(prs: list[dict], mine: bool, heading: str, show_all: bool) -> str:
@@ -74,20 +94,18 @@ def pr_table(prs: list[dict], mine: bool, heading: str, show_all: bool) -> str:
     for p in shown:
         url = html.escape(pr.pr_url(p["repo"], p["number"]))
         repo = html.escape(p["repo"])
-        review = (
-            '<form method="post" action="/review">'
-            f'<input type="hidden" name="repo" value="{repo}">'
-            f'<input type="hidden" name="number" value="{p["number"]}">'
-            f'<input type="hidden" name="all" value="{int(show_all)}">'
-            "<button>review</button></form>"
-        )
+        forms = [pr_form("review", "review", repo, p["number"], show_all)]
+        if mine:
+            # only drafts can be marked ready, and GitHub won't auto-merge a draft
+            action, label = MINE_BUTTONS[0] if p["draft"] else MINE_BUTTONS[1]
+            forms.append(pr_form(action, label, repo, p["number"], show_all))
         cells = [
             f'<a href="{url}" target="_blank">#{p["number"]}</a>',
             repo,
             html.escape(p["author"]),
             html.escape(p["checks"]),
             html.escape(p["title"]),
-            review,
+            '<div class="actions">' + "".join(forms) + "</div>",
         ]
         out.append('<tr class="pr">' + "".join(f"<td>{c}</td>" for c in cells) + "</tr>")
     out.append("</table>")
@@ -141,7 +159,7 @@ def render_page(
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         f"<title>be</title><style>{STYLE}</style></head><body>",
         f"<p>{links}</p>",
-        '<p class="keys">j/k move · enter review or open issue · o open in browser · m switch table · a toggle all</p>',
+        '<p class="keys">j/k move · enter review or open issue · o open in browser · r mark your draft ready · u enable auto-merge on your PR · m switch table · a toggle all</p>',
     ]
     if message:
         parts.append(f'<p class="msg">{html.escape(message)}</p>')
@@ -198,7 +216,8 @@ def make_handler(parent: str | None) -> type[BaseHTTPRequestHandler]:
             self.wfile.write(body)
 
         def do_POST(self) -> None:
-            if urlparse(self.path).path != "/review":
+            path = urlparse(self.path).path
+            if path not in ("/review", *(f"/{a}" for a in pr.MINE_ACTIONS)):
                 self.send_error(404)
                 return
             length = int(self.headers.get("Content-Length", 0))
@@ -209,12 +228,30 @@ def make_handler(parent: str | None) -> type[BaseHTTPRequestHandler]:
             if not repo or not number.isdigit():
                 self.send_error(400)
                 return
+            if path != "/review":
+                self.mine_action(path[1:], repo, int(number), show_all)
+                return
             try:
                 pr.open_review(repo, int(number), parent)
             except click.ClickException as e:
                 self.redirect(show_all, f"{repo}#{number}: {e.format_message()}")
                 return
             self.redirect(show_all, f"opened {repo}#{number}")
+
+        def mine_action(self, action: str, repo: str, number: int, show_all: bool) -> None:
+            if True not in fetched:
+                fetched[True] = pr.fetch_prs(True)
+            found = [p for p in fetched[True] if p["repo"] == repo and p["number"] == number]
+            if not found:
+                self.redirect(show_all, f"{repo}#{number} is not one of your open PRs")
+                return
+            try:
+                message = pr.run_mine_action(action, found[0])
+            except click.ClickException as e:
+                message = f"{repo}#{number}: {e.format_message()}"
+            # drafts and checks may have changed
+            fetched.pop(True, None)
+            self.redirect(show_all, message)
 
     return Handler
 
@@ -231,7 +268,8 @@ def make_handler(parent: str | None) -> type[BaseHTTPRequestHandler]:
 def server(parent: str | None, host: str, port: int, no_open: bool) -> None:
     """Serve a web page with the `pr ls` tables and the `jira ls` table.
 
-    Each PR can be reviewed (as `pr review`) or opened on GitHub, each issue
+    Each PR can be reviewed (as `pr review`) or opened on GitHub, and each of
+    your PRs marked ready (drafts) or set to auto-merge; each issue
     opened in Jira, and the filters toggle like `pr ls -i`. Ctrl-C stops it.
     """
     httpd = HTTPServer((host, port), make_handler(parent))

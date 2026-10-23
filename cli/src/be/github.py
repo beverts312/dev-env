@@ -120,6 +120,49 @@ def search_prs(qualifier: str) -> list[dict]:
     return sorted(prs, key=lambda pr: (pr["repo"], pr["number"]))
 
 
+def gh(*args: str) -> str:
+    """Run gh and return its stdout, raising ClickException on failure."""
+    try:
+        result = subprocess.run(["gh", *args], capture_output=True, text=True)
+    except FileNotFoundError:
+        raise click.ClickException("gh not found; install the GitHub CLI") from None
+    if result.returncode != 0:
+        message = result.stderr.strip() or result.stdout.strip()
+        raise click.ClickException(f"gh {args[0]} {args[1]} failed: {message}")
+    return result.stdout
+
+
+def mark_ready(slug: str, number: int) -> None:
+    """Mark a draft PR ready for review."""
+    gh("pr", "ready", str(number), "--repo", slug)
+
+
+# merge methods in order of preference, keyed by the repo setting that allows each
+MERGE_METHODS = (
+    ("squashMergeAllowed", "--squash"),
+    ("mergeCommitAllowed", "--merge"),
+    ("rebaseMergeAllowed", "--rebase"),
+)
+
+
+def merge_method(slug: str) -> str:
+    """The gh pr merge flag for the repo's preferred allowed merge method."""
+    fields = ",".join(field for field, _ in MERGE_METHODS)
+    try:
+        allowed = json.loads(gh("repo", "view", slug, "--json", fields))
+    except json.JSONDecodeError:
+        raise click.ClickException(f"gh returned unreadable settings for {slug}") from None
+    for field, flag in MERGE_METHODS:
+        if allowed.get(field):
+            return flag
+    raise click.ClickException(f"{slug} allows no merge method")
+
+
+def enable_auto_merge(slug: str, number: int) -> None:
+    """Merge the PR once its requirements pass, with the repo's preferred method."""
+    gh("pr", "merge", str(number), "--repo", slug, "--auto", merge_method(slug))
+
+
 def same_login(a: str, b: str) -> bool:
     """Compare logins, ignoring case and the [bot] suffix REST adds to apps."""
     return a.lower().removesuffix("[bot]") == b.lower().removesuffix("[bot]")

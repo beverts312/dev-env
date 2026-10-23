@@ -1,6 +1,9 @@
 import json
 import subprocess
 
+import click
+import pytest
+
 from click.testing import CliRunner
 
 from be import github
@@ -177,3 +180,82 @@ def test_pr_ls_interactive_toggles_filters(monkeypatch):
 def test_same_login():
     assert github.same_login("renovate", "Renovate[bot]")
     assert not github.same_login("renovate", "renovate-approve")
+
+
+def test_mark_ready_and_auto_merge_call_gh(monkeypatch):
+    calls = []
+    settings = json.dumps(
+        {"squashMergeAllowed": False, "mergeCommitAllowed": True, "rebaseMergeAllowed": True}
+    )
+
+    def run(cmd, **kw):
+        calls.append(cmd)
+        out = settings if cmd[1:3] == ["repo", "view"] else ""
+        return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    github.mark_ready("acme/api", 9)
+    github.enable_auto_merge("acme/api", 7)
+    assert calls[0] == ["gh", "pr", "ready", "9", "--repo", "acme/api"]
+    assert calls[2] == ["gh", "pr", "merge", "7", "--repo", "acme/api", "--auto", "--merge"]
+
+
+def test_gh_failure_raises(monkeypatch):
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda cmd, **kw: subprocess.CompletedProcess(cmd, 1, stdout="", stderr="auto-merge is not allowed"),
+    )
+    with pytest.raises(click.ClickException, match="auto-merge is not allowed"):
+        github.enable_auto_merge("acme/api", 7)
+
+
+def test_run_mine_action(monkeypatch):
+    calls = []
+    monkeypatch.setattr(pr, "mark_ready", lambda *args: calls.append(("ready", *args)))
+    monkeypatch.setattr(pr, "enable_auto_merge", lambda *args: calls.append(("auto", *args)))
+    draft, ready = PRS[2], PRS[0]
+    assert pr.run_mine_action("ready", draft) == "marked acme/api#9 ready for review"
+    assert pr.run_mine_action("ready", ready) == "acme/api#7 is not a draft"
+    assert pr.run_mine_action("automerge", ready) == "enabled auto-merge on acme/api#7"
+    assert pr.run_mine_action("automerge", draft) == "acme/api#9 is a draft; mark it ready first"
+    assert calls == [("ready", "acme/api", 9), ("auto", "acme/api", 7)]
+
+
+def test_pr_ls_interactive_mine_actions(monkeypatch):
+    fetched = []
+    monkeypatch.setattr(pr, "authored_prs", lambda: fetched.append("mine") or PRS)
+    picks = [("ready", 2), ("automerge", 0), None]
+    shown = []
+
+    def choose(rows, index=0, hint="", actions=()):
+        shown.append((hint, actions))
+        return picks.pop(0)
+
+    monkeypatch.setattr(pr, "choose", choose)
+    calls = []
+    monkeypatch.setattr(pr, "mark_ready", lambda *args: calls.append(("ready", *args)))
+
+    def auto(*args):
+        raise click.ClickException("auto-merge is not allowed")
+
+    monkeypatch.setattr(pr, "enable_auto_merge", auto)
+    result = CliRunner().invoke(cli, ["pr", "ls", "-i", "-m", "-a"])
+    assert result.exit_code == 0, result.output
+    assert calls == [("ready", "acme/api", 9)]
+    assert "marked acme/api#9 ready for review" in result.output
+    assert "error: auto-merge is not allowed" in result.output
+    # each action refetches the list
+    assert fetched == ["mine", "mine", "mine"]
+    assert "r ready, u auto-merge" in shown[0][0]
+    assert shown[0][1][-2:] == ("ready", "automerge")
+
+
+def test_pr_ls_interactive_review_requests_have_no_mine_actions(monkeypatch):
+    monkeypatch.setattr(pr, "review_requests", lambda: PRS)
+    shown = []
+    monkeypatch.setattr(
+        pr, "choose", lambda rows, index=0, hint="", actions=(): shown.append((hint, actions))
+    )
+    CliRunner().invoke(cli, ["pr", "ls", "-i"])
+    assert "ready" not in shown[0][1] and "u auto-merge" not in shown[0][0]
