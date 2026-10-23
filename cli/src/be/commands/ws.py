@@ -455,12 +455,31 @@ def create(
         )
     elif not work_dir:
         raise click.UsageError("missing WORK_DIR; pass it or use -i")
+    create_workspace(work_dir, repos, extra_dirs, description, parent, model, org, window)
+
+
+def create_workspace(
+    work_dir: str,
+    repos: str,
+    extra_dirs: str,
+    description: str,
+    parent: str | None,
+    model: str,
+    org: str | None,
+    window: str | None,
+    issue_name: str | None = None,
+) -> None:
+    """Clone repos into work_dir, open it in cmux, and save its layout.
+
+    Without issue_name, it is looked up in Jira when work_dir starts with an issue key.
+    """
     repo_names = parse_csv(repos)
     dirs = extra_dir_paths(extra_dirs)
 
     root = workspace_root(work_dir, parent)
     root.mkdir(parents=True, exist_ok=True)
-    issue_name = fetch_issue_name(root.name)
+    if issue_name is None:
+        issue_name = fetch_issue_name(root.name)
     write_manifest(root, description, dirs, issue_name)
     os.chdir(root)
 

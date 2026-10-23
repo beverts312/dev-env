@@ -7,10 +7,12 @@ from pathlib import Path
 import click
 
 from be import config, jira
-from be.commands.ws import choose, open_root, workspace_entries
+from be.commands.ws import choose, create_workspace, open_root, prompt_create, workspace_entries
 
 EMPTY = "no in progress issues assigned to you"
 FEATURE = "Feature"
+# issues of these types get their own workspace rather than sharing their parent's
+TOP_LEVEL = (FEATURE, "Epic")
 
 
 @click.group(name="jira")
@@ -49,17 +51,59 @@ def issue_workspace(issue: dict, parent: str | None) -> Path | None:
     return None
 
 
+def workspace_issue(issue: dict) -> tuple[str, str]:
+    """Ask whether a new workspace is for the issue or its Feature/Epic parent.
+
+    Returns that issue's (key, summary); only asks when there is such a parent.
+    """
+    if issue["type"] in TOP_LEVEL or issue.get("parent_type") not in TOP_LEVEL:
+        return issue["key"], issue["summary"]
+    label = f"its {issue['parent_type']} {issue['parent']}"
+    if issue.get("parent_summary"):
+        label += f" ({issue['parent_summary']})"
+    level = click.prompt(
+        f"Workspace for (i) {issue['key']} only, or (p) {label}",
+        type=click.Choice(["i", "p"]),
+        default="i",
+    )
+    if level == "p":
+        return issue["parent"], issue.get("parent_summary", "")
+    return issue["key"], issue["summary"]
+
+
+def guided_create(
+    issue: dict, parent: str | None, model: str, org: str | None, window: str | None
+) -> bool:
+    """Walk through creating a workspace for issue; False if the user declines."""
+    if not click.confirm(f"No workspace for {issue['key']}. Create one?", default=True):
+        return False
+    key, summary = workspace_issue(issue)
+    work_dir, repos, extra_dirs, description = prompt_create(key, "", "", "")
+    create_workspace(
+        work_dir, repos, extra_dirs, description, parent, model, org, window, summary or None
+    )
+    return True
+
+
 @jira_group.command(name="list")
 @config.interactive_option(
-    "Select an issue; enter opens its workspace, o opens it in the browser, a toggles --all."
+    "Select an issue; enter opens its workspace (offering to create one),"
+    " o opens it in the browser, a toggles --all."
 )
 @click.option("-a", "--all", "show_all", is_flag=True, help="Include issues whose type is Feature.")
 @config.option("ws.dir", "--dir", "parent", help="Directory that holds the workspaces.")
+@config.option("claude.model", "--model", help="Claude model for a new workspace.")
+@config.option("work_org", "--org", help="GitHub org for a new workspace's repos.")
 @config.option(
     "cmux.window", "--window", help="cmux window to open in: pick, or an index, ref or UUID."
 )
 def list_issues(
-    interactive: bool | None, show_all: bool, parent: str | None, window: str | None
+    interactive: bool | None,
+    show_all: bool,
+    parent: str | None,
+    model: str,
+    org: str | None,
+    window: str | None,
 ) -> None:
     """List in progress issues assigned to you. Also available as ls.
 
@@ -113,8 +157,8 @@ def list_issues(
             click.echo(e.message, err=True)
             continue
         if root is None:
-            keys = " or ".join(key for key in (issue["key"], issue.get("parent")) if key)
-            click.echo(f"no workspace named {keys}", err=True)
+            if guided_create(issue, parent, model, org, window):
+                return
             continue
         open_root(root, window=window)
         return

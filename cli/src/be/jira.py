@@ -82,7 +82,8 @@ IN_PROGRESS_JQL = 'assignee = currentUser() AND statusCategory = "In Progress" O
 def in_progress_issues() -> list[dict]:
     """Issues assigned to you in an In Progress status, newest first.
 
-    Each is {"key", "type", "summary", "parent"}; parent is the parent issue's key, or "".
+    Each is {"key", "type", "summary", "parent", "parent_type", "parent_summary"}; the
+    parent fields describe the parent issue, and are "" when there is none.
     """
     issues: list[dict] = []
     token = None
@@ -95,12 +96,16 @@ def in_progress_issues() -> list[dict]:
             raise JiraError("unexpected response from the Jira search")
         for issue in data.get("issues") or []:
             fields = issue.get("fields") or {}
+            parent = fields.get("parent") or {}
+            parent_fields = parent.get("fields") or {}
             issues.append(
                 {
                     "key": issue.get("key", ""),
                     "type": (fields.get("issuetype") or {}).get("name") or "",
                     "summary": fields.get("summary") or "",
-                    "parent": (fields.get("parent") or {}).get("key") or "",
+                    "parent": parent.get("key") or "",
+                    "parent_type": (parent_fields.get("issuetype") or {}).get("name") or "",
+                    "parent_summary": parent_fields.get("summary") or "",
                 }
             )
         token = data.get("nextPageToken")
