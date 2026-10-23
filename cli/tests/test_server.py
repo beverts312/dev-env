@@ -27,6 +27,13 @@ def test_render_page_starts_empty():
     assert '<tr class="pr"' not in page
 
 
+
+def test_render_page_tables_collapse():
+    page = server.render_page({})
+    # every table has a collapse button, remembered per table in the page
+    assert page.count('class="collapse" aria-expanded="true"') == len(server.TABLES)
+    assert "be.collapsed." in page
+
 def test_render_page_marks_rows_for_filters():
     page = server.render_page({"review": PRS, "mine": []})
     # every row is rendered; the checkboxes hide them in the page
@@ -37,7 +44,9 @@ def test_render_page_marks_rows_for_filters():
     assert 'data-checks="pass" data-draft="yes">' in page
     assert page.count('type="search"') == 3
     assert 'data-hide="renovate"' in page
-    assert page.count('type="checkbox"') == 3 * len(server.PR_FILTERS) + len(server.ISSUE_FILTERS)
+    # your PRs get no filter checkboxes, as none are by Renovate
+    assert page.count('type="checkbox"') == 2 * len(server.PR_FILTERS) + len(server.ISSUE_FILTERS)
+    assert 'name="renovate"' not in page.split('data-table="mine"')[1].split('data-table="jira"')[0]
     # dropdowns default to what pr ls shows
     assert page.count('<select name="checks" data-default="pass">') == 3
     assert page.count('<select name="draft" data-default="no">') == 3
@@ -59,6 +68,19 @@ ISSUES = [
     {"key": "ACME-12", "type": "Bug", "summary": "Fix <login>"},
     {"key": "ACME-1", "type": "Feature", "summary": "Big thing"},
 ]
+
+
+def test_render_page_tabs():
+    page = server.render_page({})
+    # my work holds your PRs and the issues, reviews the review requests
+    work, reviews = page.split('<div class="tab-panel" data-tab="work">')[1].split(
+        '<div class="tab-panel" data-tab="reviews">'
+    )
+    assert work.index('data-table="mine"') < work.index('data-table="jira"')
+    assert 'data-table="review"' not in work and 'data-table="team"' not in work
+    assert reviews.index('data-table="review"') < reviews.index('data-table="team"')
+    assert 'data-table="mine"' not in reviews and 'data-table="jira"' not in reviews
+    assert page.index('class="tab" data-tab="work"') < page.index('class="tab" data-tab="reviews"')
 
 
 def test_render_page_issues(isolated_config, monkeypatch):
@@ -183,9 +205,10 @@ def test_render_page_mine_merge_and_author():
     assert 'value="7"><button>merge</button>' in page
     # only the review request tables have an author column
     assert page.count("<th>AUTHOR</th>") == 2
-    assert "<td>renovate</td>" in page.split('data-table="mine"')[0]
-    assert "<td>renovate</td>" not in page.split('data-table="mine"')[1]
-    assert "<th>AUTHOR</th>" not in server.render_page({"mine": []}).split('data-table="mine"')[1]
+    mine_tab, reviews_tab = page.split('class="tab-panel" data-tab="reviews"')
+    assert "<td>renovate</td>" in reviews_tab
+    assert "<td>renovate</td>" not in mine_tab
+    assert "<th>AUTHOR</th>" not in server.render_page({"mine": []}).split('data-table="mine"')[1].split("</section>")[0]
 
 
 def test_post_merge(serve, monkeypatch):

@@ -18,12 +18,17 @@ log = logging.getLogger(__name__)
 
 LOG_LEVELS = ("debug", "info", "warning", "error")
 
-# (id, heading) for each table, in page order; a PR table's id is its pr.KINDS list
+# (id, heading) for each table; a PR table's id is its pr.KINDS list
 TABLES = (
     ("review", "review requests"),
     ("team", "team review requests"),
     ("mine", "your PRs"),
     ("jira", "jira issues"),
+)
+# (id, label, table ids) for each tab, in page order
+TABS = (
+    ("work", "my work", ("mine", "jira")),
+    ("reviews", "reviews", ("review", "team")),
 )
 
 # (key, options, default, value) for the PR tables' filter dropdowns, defaulting to what
@@ -45,34 +50,166 @@ ISSUE_FILTERS = (
 )
 
 STYLE = """
-body { font: 14px ui-monospace, monospace; margin: 16px; background: #fff; color: #222; }
-h2 { margin-bottom: 4px; }
-h2 a { font-size: 14px; font-weight: normal; }
-table { border-collapse: collapse; margin-bottom: 24px; }
-th, td { text-align: left; padding: 2px 12px 2px 0; }
-tr.selected { background: #dde8ff; }
-tr.filtered { display: none; }
+:root {
+  color-scheme: dark;
+  --bg: #0b0e14; --surface: #121722; --raised: #171d2a; --inset: #0f141d;
+  --border: #232b3a; --border-strong: #2c3647; --rule: #1c2330;
+  --text: #e6e9ef; --text-2: #c7cfdb; --muted: #8b95a7;
+  --accent: #6ea8fe; --accent-fill: #2f6feb; --accent-tint: rgba(110, 168, 254, 0.1);
+  --pass: #56d364; --fail: #ff7b72; --pending: #e3b341;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: #9cc3ff; }
+button, select, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+header {
+  position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 16px;
+  padding: 12px 24px; background: rgba(11, 14, 20, 0.92); backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+.brand { font: 700 16px var(--mono); letter-spacing: 0.5px; }
+.tabs { display: flex; gap: 4px; padding: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+.tab {
+  display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border: 0; border-radius: 7px;
+  background: transparent; color: var(--muted); font-weight: 500; text-transform: capitalize;
+}
+.tab:hover { color: var(--text); }
+.tab.active { background: var(--accent-fill); color: #fff; }
+.count:not(:empty) { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: rgba(255, 255, 255, 0.12); }
+.keys-toggle {
+  margin-left: auto; padding: 6px 10px; background: transparent; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 8px;
+}
+.keys-toggle:hover { color: var(--text); border-color: var(--border-strong); }
+.keys { margin: 0; padding: 8px 24px; background: var(--inset); border-bottom: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+main { max-width: 1280px; margin: 0 auto; padding: 20px 24px 48px; }
+.tab-panel { display: flex; flex-direction: column; gap: 20px; }
+.tab-panel:not(.active) { display: none; }
+.msg {
+  display: flex; align-items: center; gap: 12px; margin: 0 0 20px; padding: 10px 14px;
+  background: var(--accent-tint); border: 1px solid rgba(110, 168, 254, 0.35); border-radius: 10px; color: #cfe0ff;
+}
+.msg span { flex: 1; }
+.dismiss { background: transparent; border: 0; color: var(--muted); }
+section { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.head { display: flex; align-items: center; gap: 12px; padding: 14px 16px 10px; }
+h2 { margin: 0; font-size: 15px; font-weight: 600; text-transform: capitalize; }
+.collapse {
+  display: inline-flex; padding: 2px; background: transparent; border: 0; border-radius: 6px; color: var(--muted);
+}
+.collapse:hover { color: var(--text); background: var(--raised); }
+.collapse svg { transition: transform 0.15s; }
+section.collapsed .collapse svg { transform: rotate(-90deg); }
+section.collapsed > :not(.head) { display: none; }
+.hidden-count { margin-left: 8px; color: var(--muted); font-size: 12px; font-weight: 400; text-transform: none; }
+.refresh {
+  display: inline-flex; align-items: center; gap: 6px; margin-left: auto; padding: 5px 10px;
+  border: 1px solid var(--border-strong); border-radius: 8px; color: var(--text-2); font-size: 12px;
+}
+.refresh:hover { color: var(--text); background: var(--raised); }
+.refresh.loading { pointer-events: none; opacity: 0.7; }
+.refresh.loading svg { animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 16px 12px; }
+.filters label {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 4px 4px 10px;
+  background: var(--raised); border: 1px solid var(--border); border-radius: 8px; color: var(--muted); font-size: 12px;
+}
+.filters label:has(input[type=checkbox]) { padding: 5px 10px; border-radius: 999px; }
+.filters label:has(input:checked) { background: var(--accent-tint); border-color: rgba(110, 168, 254, 0.35); color: #cfe0ff; }
+.filters select, .filters input[type=search] {
+  background: var(--bg); border: 1px solid var(--border-strong); border-radius: 6px; padding: 3px 6px;
+}
+.filters input[type=search] { flex: 0 1 260px; padding: 6px 10px; border-radius: 8px; font-size: 13px; }
+.filters input[type=search]:focus, .filters select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+input[type=checkbox] { accent-color: var(--accent); margin: 0; }
 form { margin: 0; }
-.actions { display: flex; gap: 4px; }
-.filters { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-.msg { padding: 4px 8px; background: #eee; }
-.bulk { display: flex; align-items: center; gap: 4px; margin-bottom: 8px; }
-.keys, .empty { color: #666; }
-@media (prefers-color-scheme: dark) {
-  body { background: #111; color: #ddd; }
-  tr.selected { background: #233456; }
-  .msg { background: #333; }
-  .keys, .empty { color: #999; }
+.bulk {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 16px 12px; padding: 6px 8px 6px 12px;
+  background: var(--raised); border: 1px solid var(--border); border-radius: 10px; font-size: 12px;
+}
+.bulk:has(button:not(:disabled)) { border-color: rgba(110, 168, 254, 0.35); }
+.picked-count { margin-right: 6px; color: var(--text-2); }
+.table-wrap { overflow-x: auto; border-top: 1px solid var(--border); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th {
+  padding: 8px 12px; background: var(--inset); color: var(--muted); text-align: left;
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; white-space: nowrap;
+}
+td { padding: 8px 12px; border-top: 1px solid var(--rule); white-space: nowrap; }
+td:last-child { width: 1%; }
+tr.pr:hover td, tr.issue:hover td { background: rgba(255, 255, 255, 0.02); }
+tr.selected td { background: var(--accent-tint); }
+tr.selected td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+tr.filtered { display: none; }
+td a { font-family: var(--mono); }
+td.col-checks::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--muted); }
+tr[data-checks=pass] td.col-checks { color: var(--pass); }
+tr[data-checks=pass] td.col-checks::before { background: var(--pass); }
+tr[data-checks=fail] td.col-checks { color: var(--fail); }
+tr[data-checks=fail] td.col-checks::before { background: var(--fail); }
+tr[data-checks=pending] td.col-checks { color: var(--pending); }
+tr[data-checks=pending] td.col-checks::before { background: var(--pending); }
+tr[data-draft=yes] td.col-draft { color: var(--muted); font-style: italic; }
+.actions { display: flex; justify-content: flex-end; gap: 6px; }
+.actions button, .bulk button {
+  padding: 4px 10px; background: #1d2433; border: 1px solid var(--border-strong); border-radius: 6px; font-size: 12px;
+}
+.actions button:hover, .bulk button:hover:not(:disabled) { background: #252e40; }
+form[action='/merge'] button, .bulk button[value=merge]:not(:disabled) { background: var(--accent-fill); border-color: var(--accent-fill); color: #fff; }
+.bulk button:disabled { opacity: 0.45; cursor: default; }
+.empty { padding: 20px 12px; color: var(--muted); text-align: center; }
+@media (max-width: 640px) {
+  header, main { padding-left: 16px; padding-right: 16px; }
+  .keys { padding: 8px 16px; }
+  .filters input[type=search] { flex: 1 1 100%; }
 }
 """ + "".join(f".hide-{key} .col-{key} {{ display: none; }}\n" for key, *_ in PR_SELECTS)
 
+CHEVRON_ICON = (
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"'
+    ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>'
+)
+
+REFRESH_ICON = (
+    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"'
+    ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"></path><path d="M21 3v5h-5"></path></svg>'
+)
+
 # keyboard parity with `pr ls -i`: arrows/j/k move, enter reviews (or opens an issue), o opens,
 # m switches table, a toggles the table's filters, r marks your draft ready, u enables auto-merge;
-# x checks your PR for the bulk bar; filters apply here and are remembered per table in localStorage
+# x checks your PR for the bulk bar; c collapses the table; t or 1/2 switch tab; filters apply here and
+# are remembered per table in localStorage, as are collapsed tables and the shown tab
 SCRIPT = """
-const sections = [...document.querySelectorAll("section")];
-let t = 0, r = 0;
-const rows = () => [...sections[t].querySelectorAll("tr.pr:not(.filtered), tr.issue:not(.filtered)")];
+const panels = [...document.querySelectorAll(".tab-panel")];
+const tabs = [...document.querySelectorAll(".tab")];
+let p = 0, t = 0, r = 0;
+// keys move between the tables of the shown tab
+const sections = () => [...panels[p].querySelectorAll("section")];
+const shown = "tr.pr:not(.filtered), tr.issue:not(.filtered)";
+// a collapsed table's rows can't be moved to
+const rows = () => sections()[t].classList.contains("collapsed") ? [] : [...sections()[t].querySelectorAll(shown)];
+function showTab(i) {
+  p = i; t = 0; r = 0;
+  panels.forEach((x, j) => x.classList.toggle("active", j === p));
+  tabs.forEach((x, j) => { x.classList.toggle("active", j === p); x.setAttribute("aria-selected", j === p); });
+  try { localStorage.setItem("be.tab", panels[p].dataset.tab); } catch {}
+  draw();
+}
+// each tab's badge counts its shown rows
+function updateCounts() {
+  panels.forEach((x, j) => {
+    const n = x.querySelectorAll(shown).length;
+    tabs[j].querySelector(".count").textContent = n ? n : "";
+  });
+}
 const boxes = s => [...s.querySelectorAll(".filters input[type=checkbox]")];
 const selects = s => [...s.querySelectorAll(".filters select")];
 const storeKey = (s, box) => `be.filter.${s.dataset.table}.${box.name}`;
@@ -96,7 +233,8 @@ function applyFilters(s) {
   });
   updateBulk(s);
   const count = s.querySelector(".hidden-count");
-  if (count) count.textContent = hidden ? ` (${hidden} hidden)` : "";
+  if (count) count.textContent = hidden ? `${hidden} hidden` : "";
+  updateCounts();
 }
 // the bulk bar acts on the checked rows of your PRs; each button counts the checked rows
 // it applies to and is disabled when there are none
@@ -114,13 +252,23 @@ function updateBulk(s) {
   const shown = [...s.querySelectorAll("tr.pr:not(.filtered) input.pick")];
   all.checked = shown.length > 0 && shown.every(b => b.checked);
 }
+function setCollapsed(s, on) {
+  s.classList.toggle("collapsed", on);
+  s.querySelector(".collapse").setAttribute("aria-expanded", !on);
+  try { localStorage.setItem(`be.collapsed.${s.dataset.table}`, on ? "1" : "0"); } catch {}
+}
 function draw() {
   document.querySelectorAll("tr.selected").forEach(e => e.classList.remove("selected"));
   r = Math.max(0, Math.min(r, rows().length - 1));
   const row = rows()[r];
   if (row) row.classList.add("selected");
 }
-sections.forEach(s => {
+document.querySelectorAll("section").forEach(s => {
+  try { if (localStorage.getItem(`be.collapsed.${s.dataset.table}`) === "1") setCollapsed(s, true); } catch {}
+  s.querySelector(".collapse").addEventListener("click", () => {
+    setCollapsed(s, !s.classList.contains("collapsed"));
+    draw();
+  });
   boxes(s).forEach(box => {
     try { const v = localStorage.getItem(storeKey(s, box)); if (v !== null) box.checked = v === "1"; } catch {}
     box.addEventListener("change", () => {
@@ -176,17 +324,20 @@ document.addEventListener("keydown", e => {
   // a focused dropdown keeps its own keys
   if (e.target.tagName === "SELECT") return;
   if (e.key === "/") {
-    const search = sections[t].querySelector(".filters input[type=search]");
+    const search = sections()[t].querySelector(".filters input[type=search]");
     if (search) { search.focus(); e.preventDefault(); }
     return;
   }
   const row = rows()[r];
   if (e.key === "ArrowDown" || e.key === "j") r = Math.min(r + 1, rows().length - 1);
   else if (e.key === "ArrowUp" || e.key === "k") r = Math.max(r - 1, 0);
-  else if (e.key === "m") { t = (t + 1) % sections.length; r = 0; }
+  else if (e.key === "m") { t = (t + 1) % sections().length; r = 0; }
+  else if (e.key === "c") { const s = sections()[t]; setCollapsed(s, !s.classList.contains("collapsed")); r = 0; }
+  else if (e.key === "t") { showTab((p + 1) % panels.length); return; }
+  else if (e.key >= "1" && e.key <= String(panels.length)) { showTab(Number(e.key) - 1); return; }
   else if (e.key === "a") {
     // like --all: clear every filter, or turn them all back on (dropdowns to their defaults)
-    const s = sections[t], bs = boxes(s), xs = selects(s);
+    const s = sections()[t], bs = boxes(s), xs = selects(s);
     const on = !bs.some(b => b.checked) && !xs.some(x => x.value !== "all");
     const set = (el, prop, v) => { if (el[prop] !== v) { el[prop] = v; el.dispatchEvent(new Event("change")); } };
     bs.forEach(b => set(b, "checked", on));
@@ -201,7 +352,7 @@ document.addEventListener("keydown", e => {
   }
   else if (e.key === "x" && row) {
     const pick = row.querySelector("input.pick");
-    if (pick) { pick.checked = !pick.checked; updateBulk(sections[t]); }
+    if (pick) { pick.checked = !pick.checked; updateBulk(sections()[t]); }
   }
   else if ((e.key === "r" || e.key === "u") && row) {
     const form = row.querySelector(`form[action="/${e.key === "r" ? "ready" : "automerge"}"]`);
@@ -212,7 +363,17 @@ document.addEventListener("keydown", e => {
   e.preventDefault();
   draw();
 });
-draw();
+tabs.forEach((x, j) => x.addEventListener("click", () => showTab(j)));
+// a refresh blocks while the table is fetched; spin its icon meanwhile
+document.querySelectorAll("a.refresh").forEach(a => a.addEventListener("click", () => a.classList.add("loading")));
+const keys = document.querySelector(".keys"), toggle = document.querySelector(".keys-toggle");
+toggle.addEventListener("click", () => { keys.hidden = !keys.hidden; toggle.setAttribute("aria-expanded", !keys.hidden); });
+const dismiss = document.querySelector(".msg .dismiss");
+if (dismiss) dismiss.addEventListener("click", () => dismiss.parentElement.remove());
+// the tab named in the URL's hash, else the one last shown
+let start = location.hash.slice(1);
+if (!start) try { start = localStorage.getItem("be.tab"); } catch {}
+showTab(Math.max(0, panels.findIndex(x => x.dataset.tab === start)));
 """
 
 
@@ -294,7 +455,7 @@ def section(
     selects: tuple = (),
     bulk: str = "",
 ) -> list[str]:
-    """The heading with its refresh link, filter dropdowns and checkboxes, (if search) a
+    """The heading with its collapse button and refresh link, filter dropdowns and checkboxes, (if search) a
     search box matching rows' data-search, and any bulk bar; the caller adds the table."""
     boxes = "".join(select_html(key, options, default) for key, options, default, _ in selects)
     boxes += "".join(
@@ -305,13 +466,14 @@ def section(
         boxes += '<input type="search" name="search" placeholder="repo or title" aria-label="search repo or title">'
     return [
         f'<section data-table="{table}">',
-        f'<h2>{html.escape(heading)}<span class="hidden-count"></span>'
-        f' <a href="/refresh?table={table}">refresh</a></h2>',
+        f'<div class="head"><button type="button" class="collapse" aria-expanded="true"'
+        f' aria-label="collapse {html.escape(heading)}">{CHEVRON_ICON}</button><h2>{html.escape(heading)}<span class="hidden-count"></span></h2>'
+        f'<a class="refresh" href="/refresh?table={table}">{REFRESH_ICON}refresh</a></div>',
         f'<div class="filters">{boxes}</div>',
         bulk,
-        "<table>",
+        '<div class="table-wrap"><table>',
         *rows,
-        "</table></section>",
+        "</table></div></section>",
     ]
 
 
@@ -328,6 +490,8 @@ NOT_LOADED = "not loaded; refresh to load"
 def pr_table(table: str, heading: str, prs: list[dict] | str | None) -> str:
     """A `pr ls` table; prs is None before it's loaded, or the error message when that failed."""
     mine = table == "mine"
+    # your PRs are never by Renovate, so they skip its checkbox
+    filters = () if mine else PR_FILTERS
     header = pr_header(mine)
     colspan = len(header) + 1
     if not prs or isinstance(prs, str):
@@ -336,7 +500,7 @@ def pr_table(table: str, heading: str, prs: list[dict] | str | None) -> str:
         else:
             message = f"github: {prs}" if prs else pr.EMPTY[table]
         rows = empty_row(header, colspan, message)
-        return "\n".join(section(table, heading, PR_FILTERS, rows, search=True, selects=PR_SELECTS))
+        return "\n".join(section(table, heading, filters, rows, search=True, selects=PR_SELECTS))
     out = [header_row(header, 1)]
     if mine:
         out[0] = out[0].replace(
@@ -364,7 +528,7 @@ def pr_table(table: str, heading: str, prs: list[dict] | str | None) -> str:
         if mine:
             data += f' data-actions="{" ".join(mine_actions(p))}"'
         out.append(
-            f'<tr class="pr" data-search="{search}"{data}{hide_attr(p, PR_FILTERS)}>'
+            f'<tr class="pr" data-search="{search}"{data}{hide_attr(p, filters)}>'
             + pick
             + "".join(f"<td{col_attr(h)}>{cells[h]}</td>" for h in header)
             + actions
@@ -372,7 +536,7 @@ def pr_table(table: str, heading: str, prs: list[dict] | str | None) -> str:
         )
     bulk = bulk_bar() if mine else ""
     return "\n".join(
-        section(table, heading, PR_FILTERS, out, search=True, selects=PR_SELECTS, bulk=bulk)
+        section(table, heading, filters, out, search=True, selects=PR_SELECTS, bulk=bulk)
     )
 
 
@@ -404,22 +568,43 @@ def issue_table(heading: str, issues: list[dict] | str | None) -> str:
     return "\n".join(section("jira", heading, ISSUE_FILTERS, out))
 
 
+KEYS = (
+    "j/k move · enter review or open issue · o open in browser · r mark your draft ready"
+    " · u enable auto-merge on your PR · x check your PR for bulk actions · t or 1/2 switch tab"
+    " · m switch table · c collapse table · a toggle filters · / search repo or title"
+)
+
+
 def render_page(loaded: dict[str, list[dict] | str], message: str = "") -> str:
-    """The `pr ls` tables and the `jira ls` table, each loaded on refresh, with the `-i` actions."""
+    """The `pr ls` tables and the `jira ls` table in tabs, each loaded on refresh, with the `-i` actions."""
+    headings = dict(TABLES)
+    tabs = "".join(
+        f'<button type="button" class="tab" data-tab="{tab}">{html.escape(label)}'
+        '<span class="count"></span></button>'
+        for tab, label, _ in TABS
+    )
     parts = [
         "<!doctype html><html><head><meta charset=utf-8>",
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         f"<title>be</title><style>{STYLE}</style></head><body>",
-        '<p class="keys">j/k move · enter review or open issue · o open in browser · r mark your draft ready · u enable auto-merge on your PR · x check your PR for bulk actions · m switch table · a toggle filters · / search repo or title</p>',
+        f'<header><span class="brand">be</span><nav class="tabs" aria-label="tabs">{tabs}</nav>'
+        '<button type="button" class="keys-toggle" aria-expanded="false">? keys</button></header>',
+        f'<p class="keys" hidden>{KEYS}</p><main>',
     ]
     if message:
-        parts.append(f'<p class="msg">{html.escape(message)}</p>')
-    for table, heading in TABLES:
-        if table == "jira":
-            parts.append(issue_table(heading, loaded.get(table)))
-        else:
-            parts.append(pr_table(table, heading, loaded.get(table)))
-    parts.append(f"<script>{SCRIPT}</script></body></html>")
+        parts.append(
+            f'<p class="msg"><span>{html.escape(message)}</span>'
+            '<button type="button" class="dismiss" aria-label="dismiss">✕</button></p>'
+        )
+    for tab, _, tables in TABS:
+        parts.append(f'<div class="tab-panel" data-tab="{tab}">')
+        for table in tables:
+            if table == "jira":
+                parts.append(issue_table(headings[table], loaded.get(table)))
+            else:
+                parts.append(pr_table(table, headings[table], loaded.get(table)))
+        parts.append("</div>")
+    parts.append(f"</main><script>{SCRIPT}</script></body></html>")
     return "\n".join(parts)
 
 
@@ -563,7 +748,7 @@ def make_handler(parent: str | None) -> type[BaseHTTPRequestHandler]:
     help="Log requests (info), fetches and gh calls (debug), and failures and retries (warning).",
 )
 def server(parent: str | None, host: str, port: int, no_open: bool, log_level: str) -> None:
-    """Serve a web page with the `pr ls` tables and the `jira ls` table.
+    """Serve a web page with the `pr ls` tables and the `jira ls` table, in two tabs.
 
     Each PR can be reviewed (as `pr review`) or opened on GitHub, and each of
     your PRs marked ready (drafts), set to auto-merge, or merged (approved),
