@@ -51,8 +51,15 @@ def clone_or_reuse(slug: str, dest: Path) -> None:
 # seconds to wait before each retry of a gh call GitHub rate-limited or failed with a 5xx
 RETRY_DELAYS = (2, 4, 8, 16)
 
-# rate limits, and the gateway errors GitHub returns when a query times out
-RETRYABLE = ("rate limit", "too quickly", "http 502", "http 503", "http 504")
+# rate limits, and the gateway errors and cut-off responses GitHub gives when a query times out
+RETRYABLE = (
+    "rate limit",
+    "too quickly",
+    "http 502",
+    "http 503",
+    "http 504",
+    "unexpected end of json input",
+)
 
 
 def retryable(result: subprocess.CompletedProcess) -> bool:
@@ -74,8 +81,9 @@ def run_gh(*args: str) -> subprocess.CompletedProcess:
 
 
 PR_SEARCH = """
-query($q: String!) {
-  search(query: $q, type: ISSUE, first: 100) {
+query($q: String!, $after: String) {
+  search(query: $q, type: ISSUE, first: 25, after: $after) {
+    pageInfo { hasNextPage endCursor }
     nodes {
       ... on PullRequest {
         number
@@ -116,13 +124,23 @@ def search_prs(qualifier: str) -> list[dict]:
     """Open PRs matching qualifier: number, repo, title, checks, approvals, draft, author,
     whether it's approved, whether auto-merge is enabled, and the repo's merge flag."""
     query = f"is:pr is:open archived:false {qualifier}"
-    result = run_gh("api", "graphql", "-f", f"query={PR_SEARCH}", "-f", f"q={query}")
-    if result.returncode != 0:
-        raise click.ClickException(f"gh api graphql failed: {result.stderr.strip()}")
-    try:
-        nodes = json.loads(result.stdout)["data"]["search"]["nodes"]
-    except (json.JSONDecodeError, KeyError, TypeError):
-        raise click.ClickException("gh returned unreadable search results") from None
+    nodes = []
+    after = None
+    # small pages, so no one request is heavy enough for GitHub to time out
+    while True:
+        cursor = ["-f", f"after={after}"] if after else []
+        result = run_gh("api", "graphql", "-f", f"query={PR_SEARCH}", *cursor, "-f", f"q={query}")
+        if result.returncode != 0:
+            raise click.ClickException(f"gh api graphql failed: {result.stderr.strip()}")
+        try:
+            search = json.loads(result.stdout)["data"]["search"]
+            nodes += search["nodes"]
+        except (json.JSONDecodeError, KeyError, TypeError):
+            raise click.ClickException("gh returned unreadable search results") from None
+        page = search.get("pageInfo") or {}
+        if not page.get("hasNextPage"):
+            break
+        after = page["endCursor"]
     prs = []
     for node in nodes:
         if not node:

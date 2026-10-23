@@ -120,6 +120,24 @@ def test_search_prs_passes_qualifier(monkeypatch):
     ]
 
 
+def test_search_prs_follows_pages(monkeypatch):
+    def page(number, cursor):
+        node = {"number": number, "title": "t", "repository": {"nameWithOwner": "a/b"}, "commits": {"nodes": []}}
+        info = {"hasNextPage": bool(cursor), "endCursor": cursor}
+        return json.dumps({"data": {"search": {"pageInfo": info, "nodes": [node]}}})
+
+    pages = [page(1, "c1"), page(2, None)]
+    calls = []
+
+    def run(cmd, **kw):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout=pages.pop(0))
+
+    monkeypatch.setattr(subprocess, "run", run)
+    assert [p["number"] for p in github.authored_prs()] == [1, 2]
+    assert ["after=c1" in cmd for cmd in calls] == [False, True]
+
+
 LIMITED = subprocess.CompletedProcess([], 1, stdout="", stderr="GraphQL: API rate limit exceeded for user")
 
 
@@ -134,9 +152,10 @@ def fake_gh(monkeypatch, results):
 def test_search_prs_retries_rate_limits_and_gateway_errors(monkeypatch):
     out = json.dumps({"data": {"search": {"nodes": []}}})
     bad_gateway = subprocess.CompletedProcess([], 1, stdout="", stderr="HTTP 502: Bad Gateway (https://api.github.com/graphql)")
-    slept = fake_gh(monkeypatch, [LIMITED, bad_gateway, subprocess.CompletedProcess([], 0, stdout=out)])
+    cut_off = subprocess.CompletedProcess([], 1, stdout="", stderr="unexpected end of JSON input")
+    slept = fake_gh(monkeypatch, [LIMITED, bad_gateway, cut_off, subprocess.CompletedProcess([], 0, stdout=out)])
     assert github.review_requests() == []
-    assert slept == [2, 4]
+    assert slept == [2, 4, 8]
 
 
 def test_search_prs_gives_up_after_retries(monkeypatch):
