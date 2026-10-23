@@ -758,3 +758,37 @@ def test_ws_delete_missing_or_symlink(tmp_path):
         assert "not a workspace directory" in result.output
     assert target.is_dir()
     assert (tmp_path / "link").is_symlink()
+
+
+def test_ws_open_switches_to_open_workspace(tmp_path, monkeypatch):
+    root = tmp_path / "proj"
+    root.mkdir()
+    (root / "workspace.yml").write_text("name: proj\nissue_name: Fix login\n")
+    monkeypatch.setattr(cmux, "start", lambda: "cmux")
+    titles = []
+    monkeypatch.setattr(cmux, "focus_existing", lambda binary, title: titles.append(title) or True)
+
+    def fail(*args):
+        raise AssertionError("should not open a new workspace")
+
+    monkeypatch.setattr(cmux, "get_layout", fail)
+    monkeypatch.setattr(cmux, "new_workspace", fail)
+    result = CliRunner().invoke(cli, ["ws", "open", "proj", "--dir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert titles == ["Fix login"]
+
+
+def test_pr_review_switches_to_open_review(tmp_path, monkeypatch):
+    from be.commands import pr
+
+    def fail(*args):
+        raise AssertionError("should not clone or open")
+
+    monkeypatch.setattr(pr, "clone_or_reuse", fail)
+    monkeypatch.setattr(cmux, "new_workspace", fail)
+    monkeypatch.setattr(cmux, "start", lambda: "cmux")
+    titles = []
+    monkeypatch.setattr(cmux, "focus_existing", lambda binary, title: titles.append(title) or True)
+    result = CliRunner().invoke(cli, ["pr", "review", "acme/api", "7", "--parent", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert titles == ["pr-api-7"]

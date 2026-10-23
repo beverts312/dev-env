@@ -74,7 +74,8 @@ def review_layout(dest: Path, prompt: str, url: str) -> dict:
 def review(repo: str, number: int, parent: str | None, org: str | None) -> None:
     """Clone REPO and open cmux with Claude running /pr-review and the PR in a browser pane.
 
-    The workspace goes in the `prs` workspace group, created on first use.
+    The workspace goes in the `prs` workspace group, created on first use. If the
+    review is already open, cmux switches to it instead.
     """
     open_review(repo_slug(repo, org), number, parent)
 
@@ -84,14 +85,18 @@ def open_review(slug: str, number: int, parent: str | None) -> None:
     root.mkdir(parents=True, exist_ok=True)
     short = slug.rsplit("/", 1)[-1]
     dest = root / short
+    name = f"pr-{short}-{number}"
+    binary = cmux.start()
+    # a review that is already open is shown as is, without updating the checkout
+    if cmux.focus_existing(binary, name):
+        return
     clone_or_reuse(slug, dest)
 
-    binary = cmux.start()
     prompt = f"/pr-review {slug} {number}"
     group = cmux.find_group(binary, PR_GROUP)
     args = [
         "--name",
-        f"pr-{short}-{number}",
+        name,
         "--cwd",
         str(dest),
         "--focus",

@@ -1,5 +1,6 @@
 import pytest
 
+from be import cmux
 from be.config import SETTINGS
 
 
@@ -11,3 +12,9 @@ def isolated_config(tmp_path, monkeypatch):
     for s in SETTINGS.values():
         monkeypatch.delenv(s.env, raising=False)
     return path
+
+
+@pytest.fixture(autouse=True)
+def nothing_open_in_cmux(monkeypatch):
+    """Treat every workspace as not yet open, so tests needn't stub cmux's listings."""
+    monkeypatch.setattr(cmux, "focus_existing", lambda binary, title: False)

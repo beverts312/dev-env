@@ -267,11 +267,15 @@ def window_args(window: str | None) -> list[str]:
 
 
 def open_root(root: Path, model: str | None = None, window: str | None = None) -> None:
+    """Open root's saved layout in cmux, or switch to it if it is already open."""
     if not root.is_dir():
         raise click.ClickException(f"{root} is not a directory")
     if not model:
         model, _ = config.resolve("claude.model")
     binary = cmux.start()
+    name = read_manifest(root).get("issue_name") or root.name
+    if cmux.focus_existing(binary, name):
+        return
     layout = cmux.get_layout(binary, root.name)
     stamp_claude(layout, claude_command([], model or ""), str(root))
     target = target_window(binary, window)
@@ -279,7 +283,7 @@ def open_root(root: Path, model: str | None = None, window: str | None = None) -
         binary,
         [
             "--name",
-            read_manifest(root).get("issue_name") or root.name,
+            name,
             "--cwd",
             str(root),
             "--focus",

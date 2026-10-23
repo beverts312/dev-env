@@ -103,8 +103,8 @@ def current_window(cmux: str) -> str | None:
     return result.stdout.strip() or None
 
 
-def window_title(cmux: str, window: str) -> str:
-    """Return the title of the selected workspace in window, or ""."""
+def list_workspaces(cmux: str, window: str) -> list[dict]:
+    """Return window's workspaces (ref, id, title, selected and more), or [] if unreadable."""
     result = subprocess.run(
         [cmux, "workspace", "list", "--window", window, "--json"],
         capture_output=True,
@@ -114,11 +114,50 @@ def window_title(cmux: str, window: str) -> str:
     try:
         workspaces = json.loads(result.stdout)["workspaces"]
     except (json.JSONDecodeError, KeyError, TypeError):
-        return ""
-    for workspace in workspaces:
+        return []
+    return workspaces if isinstance(workspaces, list) else []
+
+
+def window_title(cmux: str, window: str) -> str:
+    """Return the title of the selected workspace in window, or ""."""
+    for workspace in list_workspaces(cmux, window):
         if workspace.get("selected"):
             return workspace.get("title") or ""
     return ""
+
+
+def find_workspace(cmux: str, title: str) -> tuple[str, str] | None:
+    """Return (window id, workspace id) of the first open workspace titled title."""
+    for window in list_windows(cmux):
+        for workspace in list_workspaces(cmux, window["id"]):
+            if workspace.get("title") == title and workspace.get("id"):
+                return window["id"], workspace["id"]
+    return None
+
+
+def show_workspace(cmux: str, window: str, workspace: str) -> None:
+    """Bring window to the front with workspace selected in it."""
+    for args in (
+        ["focus-window", "--window", window],
+        ["select-workspace", "--workspace", workspace, "--window", window],
+    ):
+        result = subprocess.run([cmux, *args], capture_output=True, text=True)
+        if result.returncode != 0:
+            sys.stderr.write(result.stderr)
+            raise click.ClickException(f"could not switch to cmux workspace {workspace}")
+    # focusing a window doesn't raise cmux over the app we were run from
+    if not inside():
+        subprocess.run(["open", "-a", "cmux"])
+
+
+def focus_existing(cmux: str, title: str) -> bool:
+    """Switch to the open workspace titled title; False if there is none."""
+    found = find_workspace(cmux, title)
+    if found is None:
+        return False
+    show_workspace(cmux, *found)
+    click.echo(f"switched to open workspace {title}")
+    return True
 
 
 def find_group(cmux: str, name: str) -> str | None:
