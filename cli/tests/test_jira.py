@@ -78,12 +78,69 @@ def test_in_progress_issues_pages(monkeypatch):
 
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
     assert jira.in_progress_issues() == [
-        {"key": "ACME-2", "type": "Story", "summary": "Two", "parent": "ACME-9", "parent_type": "Epic", "parent_summary": "Nine"},
-        {"key": "ACME-1", "type": "", "summary": "One", "parent": "", "parent_type": "", "parent_summary": ""},
+        {"key": "ACME-2", "type": "Story", "summary": "Two", "status": "", "category": "", "assignee": "", "parent": "ACME-9", "parent_type": "Epic", "parent_summary": "Nine"},
+        {"key": "ACME-1", "type": "", "summary": "One", "status": "", "category": "", "assignee": "", "parent": "", "parent_type": "", "parent_summary": ""},
     ]
     assert seen[0].startswith("https://x.atlassian.net/rest/api/3/search/jql?jql=assignee")
     assert "statusCategory" in urllib.parse.unquote_plus(seen[0])
     assert "nextPageToken=p2" in seen[1]
+
+
+def found(key, category, parent="", assignee="Me"):
+    return {
+        "key": key, "fields": {
+            "summary": key, "issuetype": {"name": "Story"}, "assignee": {"displayName": assignee},
+            "status": {"name": category, "statusCategory": {"key": category}},
+            "parent": {"key": parent} if parent else None,
+        },
+    }
+
+
+def test_issue_tree(monkeypatch):
+    configure(
+        ("jira.url", "https://x.atlassian.net"),
+        ("jira.email", "me@x.com"),
+        ("jira.token", "tok"),
+    )
+    pages = [
+        # yours: a to do story under your in progress feature, a to do story, and an in progress one
+        {"issues": [
+            found("ACME-5", "new", parent="ACME-1"),
+            found("ACME-7", "new"),
+            found("ACME-1", "indeterminate", parent="ACME-0"),
+        ]},
+        # the in progress one's open children, including yours again
+        {"issues": [found("ACME-5", "new", parent="ACME-1"), found("ACME-6", "indeterminate", parent="ACME-1", assignee="Pat")]},
+    ]
+    seen = []
+
+    def urlopen(request, timeout):
+        seen.append(urllib.parse.unquote_plus(request.full_url))
+        return io.BytesIO(json.dumps(pages.pop(0)).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    tree = jira.issue_tree()
+    assert "statusCategory != Done" in seen[0] and "assignee = currentUser()" in seen[0]
+    assert "parent in (ACME-1) AND statusCategory != Done" in seen[1]
+    # in progress first; ACME-1's parent isn't shown, so it's top level
+    assert [i["key"] for i in tree] == ["ACME-1", "ACME-7"]
+    assert [(c["key"], c["mine"], c["assignee"]) for c in tree[0]["children"]] == [
+        ("ACME-6", False, "Pat"),
+        ("ACME-5", True, "Me"),
+    ]
+    assert tree[1]["children"] == [] and tree[1]["mine"]
+
+
+def test_issue_tree_skips_children_without_in_progress(monkeypatch):
+    queries = []
+    monkeypatch.setattr(jira, "search", lambda jql: queries.append(jql) or [{**jira_issue("ACME-7"), "category": "new"}])
+    assert [i["key"] for i in jira.issue_tree()] == ["ACME-7"]
+    # nothing is in progress, so no children are looked up
+    assert queries == [jira.ASSIGNED_JQL]
+
+
+def jira_issue(key):
+    return {"key": key, "type": "Story", "summary": key, "status": "", "category": "", "assignee": "", "parent": "", "parent_type": "", "parent_summary": ""}
 
 
 ISSUES = [
@@ -184,6 +241,16 @@ def test_jira_ls_interactive_opens_parent_workspace(tmp_path, monkeypatch):
         tmp_path, monkeypatch, issues, [("open", 0)], ["ACME-4", "ACME-5x"]
     )
     assert opened == [tmp_path / "ACME-4"]
+
+
+def test_jira_ls_interactive_opens_linked_workspace(tmp_path, monkeypatch):
+    from be.commands import ws
+
+    (tmp_path / "login-work").mkdir()
+    ws.link_issue(tmp_path / "login-work", "ACME-3")
+    issues = [dict(issue, parent="") for issue in ISSUES]
+    _, opened = open_issue_workspace(tmp_path, monkeypatch, issues, [("open", 1)], [])
+    assert opened == [tmp_path / "login-work"]
 
 
 def test_jira_ls_interactive_prefers_issue_workspace(tmp_path, monkeypatch):

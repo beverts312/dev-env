@@ -86,9 +86,12 @@ def test_pr_ls_interactive_reviews_selection(monkeypatch, tmp_path):
     )
     reviews = []
     monkeypatch.setattr(pr, "open_review", lambda *args: reviews.append(args))
-    result = CliRunner().invoke(cli, ["pr", "ls", "-i", "--all", "--parent", str(tmp_path)])
+    result = CliRunner().invoke(
+        cli,
+        ["pr", "ls", "-i", "--all", "--parent", str(tmp_path), "--claude-model", "opus-x"],
+    )
     assert result.exit_code == 0, result.output
-    assert reviews == [("acme/web-app", 1234, str(tmp_path))]
+    assert reviews == [("acme/web-app", 1234, str(tmp_path), "claude", "opus-x", None)]
     assert shown[0][0].startswith("#7 ")
 
 

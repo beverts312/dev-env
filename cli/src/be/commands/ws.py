@@ -335,7 +335,29 @@ def workspace_details(root: Path) -> dict:
     }
     if manifest.get("issue_name"):
         details["issue_name"] = manifest["issue_name"]
+    if manifest.get("issues"):
+        details["issues"] = manifest["issues"]
     return details
+
+
+def link_issue(root: Path, key: str) -> None:
+    """Save key in root's manifest, so the issue finds this workspace though it isn't named after it."""
+    manifest = read_manifest(root) or {"name": root.name, "description": "", "extra_dirs": []}
+    issues = manifest.get("issues") if isinstance(manifest.get("issues"), list) else []
+    if key not in issues:
+        manifest["issues"] = [*issues, key]
+    (root / MANIFEST).write_text(yaml.safe_dump(manifest, sort_keys=False))
+
+
+def issue_workspaces(workspaces: list[tuple[str, object]]) -> dict[str, str]:
+    """Map each upper-cased key a workspace answers to, its directory name and the issues linked to
+    it, to that name; workspaces is (name, the manifest's issues) pairs. A name beats a link."""
+    found = {}
+    for name, issues in workspaces:
+        for key in issues if isinstance(issues, list) else []:
+            found.setdefault(str(key).upper(), name)
+    found.update({name.upper(): name for name, _ in workspaces})
+    return found
 
 
 def issue_key(name: str) -> str | None:

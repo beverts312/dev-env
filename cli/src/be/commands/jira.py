@@ -7,7 +7,15 @@ from pathlib import Path
 import click
 
 from be import config, jira
-from be.commands.ws import choose, create_workspace, open_root, prompt_create, workspace_entries
+from be.commands.ws import (
+    choose,
+    create_workspace,
+    issue_workspaces,
+    open_root,
+    prompt_create,
+    read_manifest,
+    workspace_entries,
+)
 
 EMPTY = "no in progress issues assigned to you"
 FEATURE = "Feature"
@@ -43,11 +51,12 @@ def hidden_note(hidden: int) -> str:
 
 
 def issue_workspace(issue: dict, parent: str | None) -> Path | None:
-    """The workspace named after the issue's key, else after its parent's key."""
-    entries = {entry.name.upper(): entry for entry in workspace_entries(parent)}
+    """The workspace named after or linked to the issue's key, else its parent's key."""
+    entries = {entry.name: entry for entry in workspace_entries(parent)}
+    found = issue_workspaces([(name, read_manifest(entry).get("issues")) for name, entry in entries.items()])
     for key in (issue["key"], issue.get("parent")):
-        if key and key.upper() in entries:
-            return entries[key.upper()]
+        if key and key.upper() in found:
+            return entries[found[key.upper()]]
     return None
 
 

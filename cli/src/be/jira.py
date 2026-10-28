@@ -77,18 +77,24 @@ def issue_summary(key: str) -> str:
 
 
 IN_PROGRESS_JQL = 'assignee = currentUser() AND statusCategory = "In Progress" ORDER BY updated DESC'
+# everything assigned to you that isn't done, for the page's tree
+ASSIGNED_JQL = "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC"
+SEARCH_FIELDS = "summary,issuetype,parent,status,assignee"
+# Jira's status category keys: To Do is "new", In Progress is "indeterminate"
+IN_PROGRESS = "indeterminate"
 
 
-def in_progress_issues() -> list[dict]:
-    """Issues assigned to you in an In Progress status, newest first.
+def search(jql: str) -> list[dict]:
+    """Every issue jql matches, in its order.
 
-    Each is {"key", "type", "summary", "parent", "parent_type", "parent_summary"}; the
-    parent fields describe the parent issue, and are "" when there is none.
+    Each is {"key", "type", "summary", "status", "category", "assignee", "parent",
+    "parent_type", "parent_summary"}; category is the status category's key, assignee
+    is a display name, and the parent fields are "" when there is no parent.
     """
     issues: list[dict] = []
     token = None
     while True:
-        params = {"jql": IN_PROGRESS_JQL, "fields": "summary,issuetype,parent", "maxResults": "100"}
+        params = {"jql": jql, "fields": SEARCH_FIELDS, "maxResults": "100"}
         if token:
             params["nextPageToken"] = token
         data = get_json(f"/rest/api/3/search/jql?{urllib.parse.urlencode(params)}")
@@ -98,11 +104,15 @@ def in_progress_issues() -> list[dict]:
             fields = issue.get("fields") or {}
             parent = fields.get("parent") or {}
             parent_fields = parent.get("fields") or {}
+            status = fields.get("status") or {}
             issues.append(
                 {
                     "key": issue.get("key", ""),
                     "type": (fields.get("issuetype") or {}).get("name") or "",
                     "summary": fields.get("summary") or "",
+                    "status": status.get("name") or "",
+                    "category": (status.get("statusCategory") or {}).get("key") or "",
+                    "assignee": (fields.get("assignee") or {}).get("displayName") or "",
                     "parent": parent.get("key") or "",
                     "parent_type": (parent_fields.get("issuetype") or {}).get("name") or "",
                     "parent_summary": parent_fields.get("summary") or "",
@@ -111,3 +121,36 @@ def in_progress_issues() -> list[dict]:
         token = data.get("nextPageToken")
         if not token or data.get("isLast", True):
             return issues
+
+
+def in_progress_issues() -> list[dict]:
+    """Issues assigned to you in an In Progress status, newest first, as search returns them."""
+    return search(IN_PROGRESS_JQL)
+
+
+def issue_tree() -> list[dict]:
+    """Issues assigned to you that aren't done, each nested under its parent when that's shown too.
+
+    Under each of yours that's in progress are its children that aren't done, whoever they're
+    assigned to. Each issue is as search returns it, plus "mine" (assigned to you) and
+    "children"; the top level is in progress first, then newest first, as are children.
+    """
+    assigned = search(ASSIGNED_JQL)
+    for issue in assigned:
+        issue["mine"] = True
+    keys = {issue["key"] for issue in assigned}
+    active = [issue["key"] for issue in assigned if issue["category"] == IN_PROGRESS]
+    others: list[dict] = []
+    if active:
+        # the JQL is only built from keys Jira returned, which never need quoting
+        jql = f"parent in ({', '.join(active)}) AND statusCategory != Done ORDER BY updated DESC"
+        others = [issue for issue in search(jql) if issue["key"] not in keys]
+        for issue in others:
+            issue["mine"] = False
+    issues = sorted(assigned + others, key=lambda i: i["category"] != IN_PROGRESS)
+    by_key = {issue["key"]: {**issue, "children": []} for issue in issues}
+    roots = []
+    for node in by_key.values():
+        parent = by_key.get(node["parent"])
+        (parent["children"] if parent else roots).append(node)
+    return roots

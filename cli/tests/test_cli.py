@@ -17,7 +17,10 @@ def test_help_shows_envvars():
     runner = CliRunner()
     assert "GIT_EMAIL" in runner.invoke(cli, ["git", "author", "--help"]).output
     assert "WORK_ORG" in runner.invoke(cli, ["git", "clone", "--help"]).output
-    assert "PRS_DIR" in runner.invoke(cli, ["pr", "review", "--help"]).output
+    review_help = runner.invoke(cli, ["pr", "review", "--help"]).output
+    assert "PRS_DIR" in review_help
+    assert "BE_CLAUDE_PR_MODEL" in review_help
+    assert "BE_CURSOR_PR_MODEL" in review_help
     # joined, since the wide -i/--interactive column changes the wrapping
     create_help = " ".join(runner.invoke(cli, ["ws", "create", "--help"]).output.split())
     assert "BE_CLAUDE_MODEL" in create_help
@@ -85,6 +88,91 @@ def test_pr_review_opens_pr_in_browser_pane(tmp_path, monkeypatch):
         "name": "pr",
         "url": "https://github.com/owner/repo/pull/42",
     }
+
+
+def test_pr_review_with_cursor_agent(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(pr, "clone_or_reuse", lambda slug, dest: None)
+    monkeypatch.setattr(cmux, "start", lambda: "cmux")
+    monkeypatch.setattr(cmux, "find_group", lambda binary, name: "workspace_group:1")
+    monkeypatch.setattr(cmux, "new_workspace", lambda binary, args: calls.append(args) or "")
+    monkeypatch.setenv("BE_PR_AGENT", "cursor")
+    result = CliRunner().invoke(
+        cli, ["pr", "review", "owner/repo", "42", "--parent", str(tmp_path)]
+    )
+    assert result.exit_code == 0, result.output
+    args = calls[0]
+    layout = json.loads(args[args.index("--layout") + 1])
+    agent = layout["children"][0]["pane"]["surfaces"][0]
+    assert agent["name"] == "cursor"
+    assert agent["command"] == "agent '/pr-review owner/repo 42'"
+
+
+def _stub_pr_review(monkeypatch):
+    calls = []
+    monkeypatch.setattr(pr, "clone_or_reuse", lambda slug, dest: None)
+    monkeypatch.setattr(cmux, "start", lambda: "cmux")
+    monkeypatch.setattr(cmux, "find_group", lambda binary, name: "workspace_group:1")
+    monkeypatch.setattr(cmux, "new_workspace", lambda binary, args: calls.append(args) or "")
+    return calls
+
+
+def _review_command(calls) -> str:
+    args = calls[0]
+    layout = json.loads(args[args.index("--layout") + 1])
+    return layout["children"][0]["pane"]["surfaces"][0]["command"]
+
+
+def test_pr_review_passes_claude_model(tmp_path, monkeypatch):
+    calls = _stub_pr_review(monkeypatch)
+    result = CliRunner().invoke(
+        cli,
+        ["pr", "review", "owner/repo", "42", "--parent", str(tmp_path), "--claude-model", "opus-x"],
+    )
+    assert result.exit_code == 0, result.output
+    assert _review_command(calls) == "claude --model opus-x '/pr-review owner/repo 42'"
+
+
+def test_pr_review_passes_cursor_model(tmp_path, monkeypatch):
+    calls = _stub_pr_review(monkeypatch)
+    result = CliRunner().invoke(
+        cli,
+        [
+            "pr",
+            "review",
+            "owner/repo",
+            "42",
+            "--parent",
+            str(tmp_path),
+            "--agent",
+            "cursor",
+            "--cursor-model",
+            "composer-x",
+            "--claude-model",
+            "opus-x",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert _review_command(calls) == "agent --model composer-x '/pr-review owner/repo 42'"
+
+
+def test_pr_review_model_from_config_and_env(tmp_path, monkeypatch, isolated_config):
+    isolated_config.parent.mkdir(parents=True, exist_ok=True)
+    isolated_config.write_text('[claude.pr]\nmodel = "from-file"\n')
+    calls = _stub_pr_review(monkeypatch)
+    result = CliRunner().invoke(
+        cli, ["pr", "review", "owner/repo", "42", "--parent", str(tmp_path)]
+    )
+    assert result.exit_code == 0, result.output
+    assert _review_command(calls) == "claude --model from-file '/pr-review owner/repo 42'"
+
+    calls.clear()
+    monkeypatch.setenv("BE_CLAUDE_PR_MODEL", "from-env")
+    result = CliRunner().invoke(
+        cli, ["pr", "review", "owner/repo", "42", "--parent", str(tmp_path)]
+    )
+    assert result.exit_code == 0, result.output
+    assert _review_command(calls) == "claude --model from-env '/pr-review owner/repo 42'"
 
 
 def test_pr_review_joins_existing_prs_group(tmp_path, monkeypatch):
@@ -793,3 +881,16 @@ def test_pr_review_switches_to_open_review(tmp_path, monkeypatch):
     result = CliRunner().invoke(cli, ["pr", "review", "acme/api", "7", "--parent", str(tmp_path)])
     assert result.exit_code == 0, result.output
     assert titles == ["pr-api-7"]
+
+
+def test_link_issue_and_issue_workspaces(tmp_path):
+    root = tmp_path / "proj"
+    root.mkdir()
+    ws.link_issue(root, "ACME-1")
+    ws.link_issue(root, "ACME-2")
+    ws.link_issue(root, "ACME-1")
+    assert ws.read_manifest(root) == {"name": "proj", "description": "", "extra_dirs": [], "issues": ["ACME-1", "ACME-2"]}
+    assert ws.workspace_details(root)["issues"] == ["ACME-1", "ACME-2"]
+    # a workspace named after a key beats one linked to it
+    found = ws.issue_workspaces([("proj", ["ACME-1", "acme-9"]), ("acme-9", None)])
+    assert found == {"ACME-1": "proj", "ACME-9": "acme-9", "PROJ": "proj"}

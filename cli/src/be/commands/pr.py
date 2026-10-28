@@ -36,6 +36,46 @@ EMPTY = {
 }
 # each list's name in the pr ls -i hint
 TITLES = {"review": "review requests", "team": "team review requests", "mine": "your PRs"}
+# the command each review agent is started with, keyed by the pr.agent setting
+AGENTS = {"claude": "claude", "cursor": "agent"}
+
+
+def agent_option():
+    return config.option(
+        "pr.agent",
+        "--agent",
+        type=click.Choice(tuple(AGENTS), case_sensitive=False),
+        help="Agent CLI to run /pr-review in.",
+    )
+
+
+def model_options(fn):
+    """--claude-model and --cursor-model, from claude.pr.model and cursor.pr.model."""
+    fn = config.option(
+        "cursor.pr.model",
+        "--cursor-model",
+        help="Model for Cursor pr reviews, passed as agent --model.",
+    )(fn)
+    return config.option(
+        "claude.pr.model",
+        "--claude-model",
+        help="Model for Claude pr reviews, passed as claude --model.",
+    )(fn)
+
+
+def agent_command(agent: str, prompt: str, model: str = "") -> str:
+    """The review agent's command: its CLI, --model when set, then the prompt."""
+    parts = [AGENTS[agent]]
+    if model:
+        parts += ["--model", shlex.quote(model)]
+    parts.append(shlex.quote(prompt))
+    return " ".join(parts)
+
+
+def review_model(agent: str, claude_model: str | None, cursor_model: str | None) -> str:
+    """The model for this agent; the other agent's model is left unused."""
+    chosen = {"claude": claude_model, "cursor": cursor_model}.get(agent)
+    return chosen or ""
 
 
 @click.group()
@@ -47,8 +87,10 @@ def pr_url(slug: str, number: int) -> str:
     return f"https://github.com/{slug}/pull/{number}"
 
 
-def review_layout(dest: Path, prompt: str, url: str) -> dict:
-    """Claude on the left, the pull request in a browser pane on the right."""
+def review_layout(
+    dest: Path, prompt: str, url: str, agent: str = "claude", model: str = ""
+) -> dict:
+    """The agent on the left, the pull request in a browser pane on the right."""
     return {
         "direction": "horizontal",
         "split": 0.5,
@@ -58,9 +100,9 @@ def review_layout(dest: Path, prompt: str, url: str) -> dict:
                     "surfaces": [
                         {
                             "type": "terminal",
-                            "name": "claude",
+                            "name": agent,
                             "cwd": str(dest),
-                            "command": "claude " + shlex.quote(prompt),
+                            "command": agent_command(agent, prompt, model),
                             "focus": True,
                         }
                     ]
@@ -80,16 +122,33 @@ def review_layout(dest: Path, prompt: str, url: str) -> dict:
     help="Parent folder to clone the repo into (default: current directory).",
 )
 @config.option("work_org", "--org", help="GitHub org used when REPO has no owner.")
-def review(repo: str, number: int, parent: str | None, org: str | None) -> None:
-    """Clone REPO and open cmux with Claude running /pr-review and the PR in a browser pane.
+@agent_option()
+@model_options
+def review(
+    repo: str,
+    number: int,
+    parent: str | None,
+    org: str | None,
+    agent: str,
+    claude_model: str | None,
+    cursor_model: str | None,
+) -> None:
+    """Clone REPO and open cmux with an agent running /pr-review and the PR in a browser pane.
 
     The workspace goes in the `prs` workspace group, created on first use. If the
     review is already open, cmux switches to it instead.
     """
-    open_review(repo_slug(repo, org), number, parent)
+    open_review(repo_slug(repo, org), number, parent, agent, claude_model, cursor_model)
 
 
-def open_review(slug: str, number: int, parent: str | None) -> None:
+def open_review(
+    slug: str,
+    number: int,
+    parent: str | None,
+    agent: str = "claude",
+    claude_model: str | None = None,
+    cursor_model: str | None = None,
+) -> None:
     root = Path(parent or ".").expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
     short = slug.rsplit("/", 1)[-1]
@@ -102,6 +161,7 @@ def open_review(slug: str, number: int, parent: str | None) -> None:
     clone_or_reuse(slug, dest)
 
     prompt = f"/pr-review {slug} {number}"
+    agent = agent.lower()
     group = cmux.find_group(binary, PR_GROUP)
     args = [
         "--name",
@@ -111,7 +171,15 @@ def open_review(slug: str, number: int, parent: str | None) -> None:
         "--focus",
         "true",
         "--layout",
-        json.dumps(review_layout(dest, prompt, pr_url(slug, number))),
+        json.dumps(
+            review_layout(
+                dest,
+                prompt,
+                pr_url(slug, number),
+                agent,
+                review_model(agent, claude_model, cursor_model),
+            )
+        ),
     ]
     if group:
         args += ["--group", group]
@@ -233,8 +301,17 @@ def hidden_note(hidden: int) -> str:
 @click.option(
     "-t", "--team", is_flag=True, help="List PRs that request your review only through a team."
 )
+@agent_option()
+@model_options
 def list_prs(
-    parent: str | None, interactive: bool | None, show_all: bool, mine: bool, team: bool
+    parent: str | None,
+    interactive: bool | None,
+    show_all: bool,
+    mine: bool,
+    team: bool,
+    agent: str,
+    claude_model: str | None,
+    cursor_model: str | None,
 ) -> None:
     """List open PRs that request your review by name. Also available as ls.
 
@@ -307,7 +384,9 @@ def list_prs(
                 fetched[kind].remove(prs[index])
             continue
         if action == "open":
-            open_review(prs[index]["repo"], prs[index]["number"], parent)
+            open_review(
+                prs[index]["repo"], prs[index]["number"], parent, agent, claude_model, cursor_model
+            )
             return
 
 
