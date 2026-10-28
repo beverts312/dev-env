@@ -1,0 +1,8 @@
+.pytest_cache/
+*.egg-info/
+.venv/
+dist/
+# the web app's build, which `be server` serves; `pnpm -C web build` makes it
+src/be/server/static/
+web/node_modules/
+web/dist/
