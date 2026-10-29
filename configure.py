@@ -108,18 +108,34 @@ def configure_git(name: str, email: str) -> None:
     print(f"Set global git user.email to {email!r}")
 
 
+def build_web(dev_env_home: Path) -> None:
+    """Build the web app `be server` serves into the be package."""
+    web = dev_env_home / "be" / "web"
+    if not which("pnpm"):
+        print(
+            "pnpm not found; skipping the be web app build, so `be server` can't serve it."
+            f" Install pnpm, then run:\n  pnpm -C {web} install && pnpm -C {web} build",
+            file=sys.stderr,
+        )
+        return
+    subprocess.run(["pnpm", "-C", str(web), "install", "--frozen-lockfile"], check=True)
+    subprocess.run(["pnpm", "-C", str(web), "build"], check=True)
+    print(f"Built the be web app from {web}")
+
+
 def install_cli(dev_env_home: Path) -> Path | None:
-    """Install the `be` CLI as an editable uv tool; return its path."""
+    """Build the web app, then install the `be` CLI as an editable uv tool; return its path."""
+    build_web(dev_env_home)
     if not which("uv"):
         print(
             "uv not found; skipping be CLI install. Install uv, then run:\n"
-            f"  uv tool install --editable {dev_env_home / 'cli'}",
+            f"  uv tool install --editable {dev_env_home / 'be'}",
             file=sys.stderr,
         )
         return None
 
     subprocess.run(
-        ["uv", "tool", "install", "--force", "--editable", str(dev_env_home / "cli")],
+        ["uv", "tool", "install", "--force", "--editable", str(dev_env_home / "be")],
         check=True,
     )
     bin_dir = subprocess.run(
