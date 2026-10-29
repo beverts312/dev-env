@@ -16,6 +16,7 @@ export const TITLES: Record<string, string> = {
   review: 'review requests',
   team: 'team review requests',
   mine: 'your PRs',
+  starred: 'starred',
 }
 
 export const KEYS: [string, string][] = [
@@ -25,6 +26,7 @@ export const KEYS: [string, string][] = [
   ['r', 'mark your draft ready'],
   ['u', 'enable auto-merge on your PR'],
   ['x', 'check your PR for bulk actions'],
+  ['s', 'star or unstar the PR'],
   ['h / l', 'close or open a Jira issue’s children'],
   ['m', 'switch table'],
   ['c', 'collapse the table'],

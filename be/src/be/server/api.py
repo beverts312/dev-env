@@ -12,7 +12,7 @@ import click
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from be import claude_usage, config, cursor_usage, jira
+from be import claude_usage, config, cursor_usage, github, jira
 from be.commands import pr, ws
 from be.server import views
 from be.server.views import MINE_BUTTONS, SettingError
@@ -191,6 +191,25 @@ def bulk(body: Bulk, request: Request) -> dict:
             ok, message = s.run_action(body.action, r, int(n), bulk=True)
             results.append({"pr": f"{r}#{n}", "ok": ok, "message": message})
     return {"message": "; ".join(x["message"] for x in results), "results": results}
+
+
+class Starred(BaseModel):
+    prs: list[str]
+
+
+@router.post("/prs/starred")
+def starred(body: Starred) -> dict:
+    """The starred "repo#number" PRs as they are now: rows for those not merged, and the names of those
+    merged, which the app drops. Stars are the browser's; the server only looks them up."""
+    picked = [value.rpartition("#") for value in body.prs]
+    if any(not n.isdigit() or "/" not in r for r, _, n in picked):
+        raise HTTPException(400, "bad PR name")
+    try:
+        rows, merged = github.pr_states([(r, int(n)) for r, _, n in picked])
+    except click.ClickException as e:
+        log.warning("looking up starred PRs failed: %s", e.format_message())
+        return {"rows": None, "merged": [], "error": e.format_message()}
+    return {"rows": [views.pr_row(p, False) for p in rows], "merged": merged, "error": None}
 
 
 @router.post("/prs/{action}")

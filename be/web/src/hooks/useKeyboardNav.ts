@@ -10,6 +10,7 @@ import { PAGES } from '@/lib/pages'
 //     data-nav-allfilters        its toggle-all-filters button
 //     data-nav-row               a row (an issue's has data-key and data-parent-key)
 //       data-nav-primary         clicked by enter; data-nav-link opened by o; data-nav-pick toggled by x;
+//                                data-nav-star toggled by s;
 //       data-nav-action="ready"  clicked by r ("automerge" by u); data-nav-twist opens and closes children
 // The selected row gets data-selected="true".
 export function useKeyboardNav(onHelp: () => void) {
@@ -94,6 +95,7 @@ export function useKeyboardNav(onHelp: () => void) {
         const link = row.querySelector<HTMLAnchorElement>('[data-nav-link]')
         if (link) window.open(link.href, '_blank', 'noreferrer')
       } else if (e.key === 'x') click(row.querySelector('[data-nav-pick]'))
+      else if (e.key === 's') click(row.querySelector('[data-nav-star]'))
       else if (e.key === 'r') click(row.querySelector('[data-nav-action="ready"]'))
       else if (e.key === 'u') click(row.querySelector('[data-nav-action="automerge"]'))
       else if (e.key === 'ArrowRight' || e.key === 'l') {

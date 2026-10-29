@@ -54,6 +54,8 @@ export type Workspace = {
 
 export type TableId = 'review' | 'team' | 'mine' | 'jira' | 'workspaces'
 export type PrTableId = 'review' | 'team' | 'mine'
+// the PR tables shown, with the starred PRs, which the browser keeps rather than the server
+export type PrViewId = PrTableId | 'starred'
 
 type RowsOf = { review: Pr; team: Pr; mine: Pr; jira: Issue; workspaces: Workspace }
 
@@ -125,6 +127,9 @@ export type CursorUsage = {
   fetched_at: number
 }
 
+// the starred PRs as they are now: rows for those not merged, and the names of those merged
+export type StarredData = { rows: Pr[] | null; merged: string[]; error: string | null }
+
 export type Done = { message: string }
 export type BulkDone = Done & { results: { pr: string; ok: boolean; message: string }[] }
 
@@ -159,6 +164,7 @@ export const api = {
   mineAction: (action: MineAction, repo: string, number: number) =>
     request<Done>('POST', `/prs/${action}`, { repo, number }),
   bulk: (action: MineAction, prs: string[]) => request<BulkDone>('POST', '/prs/bulk', { action, prs }),
+  starred: (prs: string[]) => request<StarredData>('POST', '/prs/starred', { prs }),
   openWorkspace: (name: string) => request<Done>('POST', `/workspaces/${segment(name)}/open`),
   createWorkspace: (fields: {
     name: string

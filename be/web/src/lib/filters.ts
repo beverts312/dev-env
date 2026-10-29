@@ -1,4 +1,4 @@
-import type { Issue, Pr, PrTableId } from '@/lib/api'
+import type { Issue, Pr, PrViewId } from '@/lib/api'
 import { usePersistent } from '@/lib/store'
 
 // the PR tables' filters, defaulting to what `pr ls` shows: passing checks, not drafts, not by Renovate
@@ -9,7 +9,7 @@ export const CHECKS = ['pass', 'fail', 'pending', 'none']
 export const DRAFT = ['no', 'yes']
 export const PR_DEFAULTS: PrFilters = { checks: 'pass', draft: 'no', renovate: true, search: '' }
 
-export function usePrFilters(table: PrTableId) {
+export function usePrFilters(table: PrViewId) {
   return usePersistent<PrFilters>(`be.filters.${table}`, PR_DEFAULTS)
 }
 

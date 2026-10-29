@@ -2,9 +2,9 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 
-import { PrTable } from '@/components/PrTable'
+import { PrTable, StarredTable } from '@/components/PrTable'
 import type { Pr } from '@/lib/api'
-import { writePersistent } from '@/lib/store'
+import { readPersistent, writePersistent } from '@/lib/store'
 import { mockApi, renderApp } from '@/test/render'
 
 const pr = (number: number, over: Partial<Pr> = {}): Pr => ({
@@ -91,5 +91,39 @@ describe('PrTable', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'load' }))
     expect(await screen.findByText('PR 7')).toBeInTheDocument()
     expect(calls.map((c) => c.path).filter((p) => p.startsWith('/tables'))).toEqual(['/tables/mine', '/tables/mine?refresh=true'])
+  })
+
+  it('stars a PR into the starred table, without your PR actions', async () => {
+    mockApi({
+      'GET /tables/mine': table(MINE),
+      'POST /prs/starred': { rows: [pr(7, { title: 'PR 7 now', actions: undefined })], merged: [], error: null },
+    })
+    renderApp(
+      <>
+        <PrTable table="mine" title="your PRs" />
+        <StarredTable title="starred" />
+      </>,
+    )
+    expect(await screen.findByText('no starred PRs; star one from your PRs or reviews')).toBeInTheDocument()
+    await screen.findByText('PR 7')
+    await userEvent.click(screen.getByRole('button', { name: 'star acme/api#7' }))
+    // the fresh row from GitHub replaces the one starred
+    expect(await screen.findByText('PR 7 now')).toBeInTheDocument()
+    const starred = within(screen.getByText('starred').closest('section')!)
+    expect(starred.queryByRole('button', { name: 'auto-merge' })).not.toBeInTheDocument()
+    expect(readPersistent<Pr[]>('be.starred', [])[0].actions).toBeUndefined()
+  })
+
+  it('drops merged PRs and unstars', async () => {
+    writePersistent('be.starred', [pr(7), pr(8)])
+    const calls = mockApi({ 'POST /prs/starred': { rows: [pr(8)], merged: ['acme/api#7'], error: null } })
+    renderApp(<StarredTable title="starred" />)
+    await waitFor(() => expect(screen.queryByText('PR 7')).not.toBeInTheDocument())
+    expect(screen.getByText('PR 8')).toBeInTheDocument()
+    expect(calls.find((c) => c.path === '/prs/starred')?.body).toEqual({ prs: ['acme/api#7', 'acme/api#8'] })
+    expect(readPersistent<Pr[]>('be.starred', []).map((p) => p.number)).toEqual([8])
+    await userEvent.click(screen.getByRole('button', { name: 'unstar acme/api#8' }))
+    expect(await screen.findByText('no starred PRs; star one from your PRs or reviews')).toBeInTheDocument()
+    expect(readPersistent<Pr[]>('be.starred', [])).toEqual([])
   })
 })

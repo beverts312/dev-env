@@ -86,26 +86,29 @@ def run_gh(*args: str) -> subprocess.CompletedProcess:
         time.sleep(delay)
 
 
+# what a PR row is read from, by search and by name
+PR_FIELDS = """
+fragment PrFields on PullRequest {
+  number
+  title
+  isDraft
+  reviewDecision
+  autoMergeRequest { enabledAt }
+  author { login }
+  repository { nameWithOwner squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed }
+  commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+  latestOpinionatedReviews(first: 20) { nodes { state } }
+}
+"""
+
 PR_SEARCH = """
 query($q: String!, $after: String) {
   search(query: $q, type: ISSUE, first: 25, after: $after) {
     pageInfo { hasNextPage endCursor }
-    nodes {
-      ... on PullRequest {
-        number
-        title
-        isDraft
-        reviewDecision
-        autoMergeRequest { enabledAt }
-        author { login }
-        repository { nameWithOwner squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed }
-        commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
-        latestOpinionatedReviews(first: 20) { nodes { state } }
-      }
-    }
+    nodes { ... on PullRequest { ...PrFields } }
   }
 }
-"""
+""" + PR_FIELDS
 
 CHECK_STATES = {
     "SUCCESS": "pass",
@@ -152,30 +155,64 @@ def search_prs(qualifier: str) -> list[dict]:
         if not page.get("hasNextPage"):
             break
         after = page["endCursor"]
-    prs = []
-    for node in nodes:
+    prs = [pr_from_node(node) for node in nodes if node]
+    return sorted(prs, key=lambda pr: (pr["repo"], pr["number"]))
+
+
+def pr_from_node(node: dict) -> dict:
+    """A PR row from its PrFields."""
+    commits = node["commits"]["nodes"]
+    rollup = commits[0]["commit"]["statusCheckRollup"] if commits else None
+    state = rollup["state"] if rollup else None
+    # each reviewer's latest approve or request-changes review, so a retracted approval doesn't count
+    reviews = (node.get("latestOpinionatedReviews") or {}).get("nodes") or []
+    return {
+        "number": node["number"],
+        "repo": node["repository"]["nameWithOwner"],
+        "title": node["title"],
+        "checks": CHECK_STATES.get(state, "none"),
+        "approvals": sum(1 for r in reviews if r and r["state"] == "APPROVED"),
+        "draft": bool(node.get("isDraft")),
+        "author": (node.get("author") or {}).get("login", ""),
+        "approved": node.get("reviewDecision") == "APPROVED",
+        "auto_merge": bool(node.get("autoMergeRequest")),
+        "merge_flag": merge_flag(node["repository"]),
+    }
+
+
+def pr_states(names: list[tuple[str, int]]) -> tuple[list[dict], list[str]]:
+    """The (repo, number) PRs looked up by name, in one request: the rows of those not merged, and the
+    "repo#number" names of those merged. One GitHub can't find is in neither."""
+    if not names:
+        return [], []
+    fields = []
+    for i, (slug, number) in enumerate(names):
+        owner, _, name = slug.partition("/")
+        fields.append(
+            f"p{i}: repository(owner: {json.dumps(owner)}, name: {json.dumps(name)}) "
+            f"{{ pullRequest(number: {number}) {{ ...PrFields merged }} }}"
+        )
+    query = "query {\n" + "\n".join(fields) + "\n}\n" + PR_FIELDS
+    result = run_gh("api", "graphql", "-f", f"query={query}")
+    # a PR GitHub can't find fails its alias alone, with data still holding the rest
+    try:
+        data = json.loads(result.stdout).get("data") or {}
+    except json.JSONDecodeError:
+        data = None
+    if result.returncode != 0 and not data:
+        raise click.ClickException(f"gh api graphql failed: {result.stderr.strip()}")
+    if not isinstance(data, dict):
+        raise click.ClickException("gh returned unreadable pull requests")
+    rows, merged = [], []
+    for i, (slug, number) in enumerate(names):
+        node = (data.get(f"p{i}") or {}).get("pullRequest")
         if not node:
             continue
-        commits = node["commits"]["nodes"]
-        rollup = commits[0]["commit"]["statusCheckRollup"] if commits else None
-        state = rollup["state"] if rollup else None
-        # each reviewer's latest approve or request-changes review, so a retracted approval doesn't count
-        reviews = (node.get("latestOpinionatedReviews") or {}).get("nodes") or []
-        prs.append(
-            {
-                "number": node["number"],
-                "repo": node["repository"]["nameWithOwner"],
-                "title": node["title"],
-                "checks": CHECK_STATES.get(state, "none"),
-                "approvals": sum(1 for r in reviews if r and r["state"] == "APPROVED"),
-                "draft": bool(node.get("isDraft")),
-                "author": (node.get("author") or {}).get("login", ""),
-                "approved": node.get("reviewDecision") == "APPROVED",
-                "auto_merge": bool(node.get("autoMergeRequest")),
-                "merge_flag": merge_flag(node["repository"]),
-            }
-        )
-    return sorted(prs, key=lambda pr: (pr["repo"], pr["number"]))
+        if node.get("merged"):
+            merged.append(f"{slug}#{number}")
+        else:
+            rows.append(pr_from_node(node))
+    return rows, merged
 
 
 def gh(*args: str) -> str:

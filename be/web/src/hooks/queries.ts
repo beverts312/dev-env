@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
-import { api, type Done, type TableId } from '@/lib/api'
+import { api, prName, type Done, type Pr, type TableId } from '@/lib/api'
 import { usePersistent } from '@/lib/store'
 
 export const tableKey = (table: TableId) => ['table', table] as const
@@ -20,6 +20,49 @@ export function useTable<T extends TableId>(table: T) {
 
 export function useMeta() {
   return useQuery({ queryKey: ['meta'], queryFn: api.meta, staleTime: Infinity })
+}
+
+// The PRs starred from your PRs or reviews, kept by the browser as they last looked, so the
+// starred table draws without waiting on GitHub
+export function useStarred() {
+  const [starred, setStarred] = usePersistent<Pr[]>('be.starred', [])
+  const isStarred = (p: Pr) => starred.some((s) => prName(s) === prName(p))
+  const toggle = (p: Pr) =>
+    setStarred((prev) =>
+      prev.some((s) => prName(s) === prName(p)) ? prev.filter((s) => prName(s) !== prName(p)) : // your PR's actions are the my PRs page's; the starred table only reviews
+          [...prev, { ...p, actions: undefined }],
+    )
+  return { starred, isStarred, toggle }
+}
+
+// The starred PRs, reread from GitHub when the table shows and on refresh: merged ones are unstarred,
+// the rest saved as they are now
+export function useStarredTable() {
+  const [starred, setStarred] = usePersistent<Pr[]>('be.starred', [])
+  const names = starred.map(prName).sort()
+  const query = useQuery({
+    queryKey: ['starred', names],
+    queryFn: async () => {
+      const data = await api.starred(names)
+      if (data.rows) {
+        const fresh = new Map(data.rows.map((p) => [prName(p), p]))
+        // stars changed while this was asked keep theirs
+        setStarred((prev) =>
+          prev.filter((p) => !data.merged.includes(prName(p))).map((p) => ({ ...p, ...fresh.get(prName(p)) })),
+        )
+      }
+      return data
+    },
+    enabled: names.length > 0,
+    // the key changes as the fresh rows are saved; keep showing the last answer meanwhile
+    placeholderData: (prev) => prev,
+  })
+  return {
+    rows: starred,
+    error: query.error?.message ?? (query.data?.error && `github: ${query.data.error}`) ?? null,
+    refresh: () => void query.refetch(),
+    refreshing: query.isFetching,
+  }
 }
 
 // The reviews page's agent: the one last picked, else --agent or pr.agent

@@ -633,3 +633,28 @@ def test_cursor_usage(serve, monkeypatch):
     monkeypatch.setattr(cursor_usage, "fetch", fail)
     data = c.get("/api/cursor-usage").json()
     assert data == {**data, "limits": [], "error": cursor_usage.LOGIN}
+
+
+def test_starred(serve, monkeypatch):
+    c, _, _, _ = serve
+    asked = []
+    monkeypatch.setattr(api.github, "pr_states", lambda names: asked.append(names) or ([PRS[0]], ["acme/web-app#1234"]))
+    resp = c.post("/api/prs/starred", json={"prs": ["acme/api#7", "acme/web-app#1234"]})
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert asked == [[("acme/api", 7), ("acme/web-app", 1234)]]
+    assert [p["url"] for p in data["rows"]] == ["https://github.com/acme/api/pull/7"]
+    assert "actions" not in data["rows"][0] and data["merged"] == ["acme/web-app#1234"] and data["error"] is None
+    for bad in (["acme/api"], ["api#7"], ["acme/api#x"]):
+        assert c.post("/api/prs/starred", json={"prs": bad}).status_code == 400
+
+
+def test_starred_shows_errors(serve, monkeypatch):
+    c, _, _, _ = serve
+
+    def fail(names):
+        raise click.ClickException("gh not found")
+
+    monkeypatch.setattr(api.github, "pr_states", fail)
+    data = c.post("/api/prs/starred", json={"prs": ["acme/api#7"]}).json()
+    assert data == {"rows": None, "merged": [], "error": "gh not found"}

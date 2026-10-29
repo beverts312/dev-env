@@ -407,3 +407,28 @@ def test_pr_ls_interactive_review_requests_have_no_mine_actions(monkeypatch):
     CliRunner().invoke(cli, ["pr", "ls", "-i"])
     assert "ready" not in shown[0][1] and "merge" not in shown[0][1]
     assert "u auto-merge" not in shown[0][0] and "m merge" not in shown[0][0]
+
+
+def test_pr_states_splits_merged(monkeypatch):
+    def pr_node(number, merged):
+        return {"pullRequest": {"number": number, "title": "t", "merged": merged, "repository": {"nameWithOwner": "a/b"}, "commits": {"nodes": []}}}
+
+    calls = []
+    # the third PR is gone: its alias is null, and gh fails, with the rest still in data
+    out = json.dumps({"data": {"p0": pr_node(1, False), "p1": pr_node(2, True), "p2": None}, "errors": [{"message": "nope"}]})
+
+    def run(cmd, **kw):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 1, stdout=out, stderr="nope")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    rows, merged = github.pr_states([("a/b", 1), ("a/b", 2), ("a/b", 3)])
+    assert [p["number"] for p in rows] == [1] and merged == ["a/b#2"]
+    assert len(calls) == 1 and 'p2: repository(owner: "a", name: "b") { pullRequest(number: 3)' in calls[0][-1]
+    assert github.pr_states([]) == ([], [])
+
+
+def test_pr_states_raises_without_data(monkeypatch):
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(cmd, 1, stdout="", stderr="bad creds"))
+    with pytest.raises(click.ClickException, match="bad creds"):
+        github.pr_states([("a/b", 1)])

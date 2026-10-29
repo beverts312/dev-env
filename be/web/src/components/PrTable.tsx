@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ExternalLink, Search } from 'lucide-react'
+import { ExternalLink, Search, Star } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
@@ -12,8 +12,8 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { tableKey, useAction, useAgent, useTable } from '@/hooks/queries'
-import { ACTION_LABELS, api, prName, type MineAction, type Pr, type PrTableId } from '@/lib/api'
+import { tableKey, useAction, useAgent, useStarred, useStarredTable, useTable } from '@/hooks/queries'
+import { ACTION_LABELS, api, prName, type MineAction, type Pr, type PrTableId, type PrViewId } from '@/lib/api'
 import { ALL, CHECKS, DRAFT, filtersOn, prShown, toggleAll, usePrFilters } from '@/lib/filters'
 import { cn } from '@/lib/utils'
 
@@ -23,19 +23,52 @@ const CHECK_STYLES: Record<string, string> = {
   pending: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
 }
 
+// What a PR table draws from: the server's table, or the starred PRs
+type PrSource = {
+  rows: Pr[] | null
+  error: string | null
+  empty?: string
+  loading?: boolean
+  notLoaded?: boolean
+  refresh: () => void
+  refreshing: boolean
+}
+
 // A `pr ls` table: review requests, team review requests, or your PRs, which can also be marked
 // ready, set to auto-merge, or merged, one at a time or checked and done in bulk
 export function PrTable({ table, title }: { table: PrTableId; title: string }) {
+  const data = useTable(table)
+  const rows = data.data?.rows ?? null
+  const source: PrSource = {
+    rows,
+    error: data.error?.message ?? (data.data?.error ? `github: ${data.data.error}` : null),
+    empty: data.data?.empty,
+    loading: data.isPending,
+    notLoaded: rows === null,
+    refresh: data.refresh,
+    refreshing: data.refreshing,
+  }
+  return <PrTableView table={table} title={title} data={source} />
+}
+
+// The PRs starred from your PRs or reviews, until they're merged
+export function StarredTable({ title }: { title: string }) {
+  const data = useStarredTable()
+  const empty = 'no starred PRs; star one from your PRs or reviews'
+  return <PrTableView table="starred" title={title} data={{ ...data, empty }} />
+}
+
+function PrTableView({ table, title, data }: { table: PrViewId; title: string; data: PrSource }) {
   const mine = table === 'mine'
   const qc = useQueryClient()
-  const data = useTable(table)
   const [filters, setFilters] = usePrFilters(table)
   const [agent] = useAgent()
+  const star = useStarred()
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const review = useAction((p: Pr) => api.review(p.repo, p.number, agent))
   const act = useAction((action: MineAction, p: Pr) => api.mineAction(action, p.repo, p.number), ['mine'])
 
-  const rows = data.data?.rows ?? null
+  const rows = data.rows
   const shown = useMemo(() => (rows ?? []).filter((p) => prShown(p, filters, mine)), [rows, filters, mine])
   // a hidden row is never acted on in bulk
   const pickedShown = shown.filter((p) => picked.has(prName(p)))
@@ -111,10 +144,10 @@ export function PrTable({ table, title }: { table: PrTableId; title: string }) {
       )}
       {!rows || !rows.length ? (
         <SectionState
-          loading={data.isPending}
-          error={data.error?.message ?? (data.data?.error && `github: ${data.data.error}`)}
-          notLoaded={rows === null}
-          empty={data.data?.empty}
+          loading={data.loading}
+          error={data.error}
+          notLoaded={data.notLoaded}
+          empty={data.empty}
           onLoad={data.refresh}
         />
       ) : (
@@ -130,6 +163,7 @@ export function PrTable({ table, title }: { table: PrTableId; title: string }) {
                   />
                 </TableHead>
               )}
+              <TableHead className="w-8" />
               <TableHead>PR</TableHead>
               <TableHead>repo</TableHead>
               {!mine && <TableHead>author</TableHead>}
@@ -153,6 +187,18 @@ export function PrTable({ table, title }: { table: PrTableId; title: string }) {
                     />
                   </TableCell>
                 )}
+                <TableCell>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    data-nav-star
+                    aria-label={`${star.isStarred(p) ? 'unstar' : 'star'} ${prName(p)}`}
+                    aria-pressed={star.isStarred(p)}
+                    onClick={() => star.toggle(p)}
+                  >
+                    <Star className={cn(star.isStarred(p) ? 'fill-amber-400 text-amber-500' : 'text-muted-foreground')} />
+                  </Button>
+                </TableCell>
                 <TableCell>
                   <a
                     data-nav-link
