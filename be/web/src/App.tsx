@@ -5,6 +5,7 @@ import { Config } from '@/pages/Config'
 import { MyPrs } from '@/pages/MyPrs'
 import { NotFound } from '@/pages/NotFound'
 import { Reviews } from '@/pages/Reviews'
+import { Usage } from '@/pages/Usage'
 import { Work } from '@/pages/Work'
 import { Workspaces } from '@/pages/Workspaces'
 
@@ -17,6 +18,7 @@ export default function App() {
           <Route path="prs" element={<MyPrs />} />
           <Route path="reviews" element={<Reviews />} />
           <Route path="workspaces" element={<Workspaces />} />
+          <Route path="usage" element={<Usage />} />
           <Route path="config" element={<Config />} />
           <Route path="*" element={<NotFound />} />
         </Route>

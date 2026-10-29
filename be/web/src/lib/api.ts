@@ -91,6 +91,40 @@ export type Setting = {
 
 export type ConfigData = { path: string; settings: Setting[]; error: string | null }
 
+// one of the plan's limits, as `claude /usage` prints it
+export type Limit = { label: string; percent: number; resets: string }
+
+export type ClaudeUsage = {
+  limits: Limit[]
+  // which account pays: the subscription or an API key
+  plan_note: string
+  // what /usage says is behind the usage, as printed
+  details: string
+  raw: string
+  error: string | null
+  // seconds since the epoch
+  fetched_at: number
+}
+
+// on-demand spend past the plan, as the Cursor agent's /usage shows it
+export type OnDemand = {
+  kind: 'fixed' | 'unlimited' | 'disabled' | 'unavailable'
+  used_dollars: number
+  // only when fixed
+  limit_dollars: number | null
+}
+
+export type CursorUsage = {
+  plan: string
+  limits: Limit[]
+  on_demand: OnDemand | null
+  // why there are no limits, when there aren't
+  message: string
+  error: string | null
+  // seconds since the epoch
+  fetched_at: number
+}
+
 export type Done = { message: string }
 export type BulkDone = Done & { results: { pr: string; ok: boolean; message: string }[] }
 
@@ -139,6 +173,8 @@ export const api = {
   setConfig: (key: string, value: string, name = '') =>
     request<Done>('PUT', `/config/${segment(key)}`, { value, name }),
   unsetConfig: (key: string) => request<Done>('DELETE', `/config/${segment(key)}`),
+  claudeUsage: () => request<ClaudeUsage>('GET', '/claude-usage'),
+  cursorUsage: () => request<CursorUsage>('GET', '/cursor-usage'),
 }
 
 export const prName = (p: Pr) => `${p.repo}#${p.number}`

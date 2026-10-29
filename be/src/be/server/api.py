@@ -5,13 +5,14 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import time
 from dataclasses import dataclass, field
 
 import click
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from be import config, jira
+from be import claude_usage, config, cursor_usage, jira
 from be.commands import pr, ws
 from be.server import views
 from be.server.views import MINE_BUTTONS, SettingError
@@ -302,6 +303,30 @@ def get_config(request: Request) -> dict:
         out["settings"] = views.config_settings(state(request).fixed)
     except click.ClickException as e:
         # e.g. the file isn't valid TOML: say why instead of the settings
+        out["error"] = e.format_message()
+    return out
+
+
+@router.get("/claude-usage")
+def get_claude_usage() -> dict:
+    """Your Claude plan's limits from `claude /usage`, or why it couldn't be read."""
+    out = {"limits": [], "plan_note": "", "details": "", "raw": "", "error": None, "fetched_at": time.time()}
+    try:
+        out.update(claude_usage.parse(claude_usage.fetch()))
+    except click.ClickException as e:
+        log.warning("reading claude usage failed: %s", e.format_message())
+        out["error"] = e.format_message()
+    return out
+
+
+@router.get("/cursor-usage")
+def get_cursor_usage() -> dict:
+    """Your Cursor plan's usage this period from Cursor's API, or why it couldn't be read."""
+    out = {"plan": "", "limits": [], "on_demand": None, "message": "", "error": None, "fetched_at": time.time()}
+    try:
+        out.update(cursor_usage.summarize(*cursor_usage.fetch()))
+    except click.ClickException as e:
+        log.warning("reading cursor usage failed: %s", e.format_message())
         out["error"] = e.format_message()
     return out
 

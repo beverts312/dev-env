@@ -595,3 +595,41 @@ def test_dev_serves_only_the_api(started, monkeypatch):
     assert be.server.DEV_URL in result.output and launched == [be.server.DEV_URL]
     app_ = started[0][0]
     assert not any(getattr(r, "path", "") == "/{path:path}" for r in app_.routes)
+
+
+def test_claude_usage(serve, monkeypatch):
+    from be import claude_usage
+    from tests.test_claude_usage import TEXT
+
+    c, *_ = serve
+    monkeypatch.setattr(claude_usage, "fetch", lambda: TEXT)
+    data = c.get("/api/claude-usage").json()
+    assert [(l["label"], l["percent"]) for l in data["limits"]] == [("Current session", 9), ("Current week (all models)", 18)]
+    assert data["error"] is None
+
+    def fail():
+        raise click.ClickException("claude is not installed or not on PATH")
+
+    monkeypatch.setattr(claude_usage, "fetch", fail)
+    data = c.get("/api/claude-usage").json()
+    assert data == {**data, "limits": [], "error": "claude is not installed or not on PATH"}
+
+
+def test_cursor_usage(serve, monkeypatch):
+    from be import cursor_usage
+    from tests.test_cursor_usage import PLAN, USAGE
+
+    c, *_ = serve
+    monkeypatch.setattr(cursor_usage, "fetch", lambda: (USAGE, PLAN, {"noUsageBasedAllowed": True}))
+    data = c.get("/api/cursor-usage").json()
+    assert data["plan"] == "Team"
+    assert [(l["label"], l["percent"]) for l in data["limits"]] == [("Included", 12), ("Auto", 11), ("API", 16)]
+    assert data["on_demand"]["kind"] == "disabled"
+    assert data["error"] is None
+
+    def fail():
+        raise click.ClickException(cursor_usage.LOGIN)
+
+    monkeypatch.setattr(cursor_usage, "fetch", fail)
+    data = c.get("/api/cursor-usage").json()
+    assert data == {**data, "limits": [], "error": cursor_usage.LOGIN}

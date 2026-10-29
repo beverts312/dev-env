@@ -46,3 +46,14 @@ export function useAction<A extends unknown[]>(
       ),
   })
 }
+
+// how often plan usage is reread, on the usage page and the reviews page's agent picker
+const USAGE_EVERY = 60_000
+
+export function useClaudeUsage() {
+  return useQuery({ queryKey: ['claude-usage'], queryFn: api.claudeUsage, refetchInterval: USAGE_EVERY })
+}
+
+export function useCursorUsage() {
+  return useQuery({ queryKey: ['cursor-usage'], queryFn: api.cursorUsage, refetchInterval: USAGE_EVERY })
+}

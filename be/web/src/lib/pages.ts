@@ -1,4 +1,4 @@
-import { Eye, FolderGit2, GitPullRequest, ListTodo, Settings, type LucideIcon } from 'lucide-react'
+import { Eye, FolderGit2, Gauge, GitPullRequest, ListTodo, Settings, type LucideIcon } from 'lucide-react'
 
 import type { TableId } from '@/lib/api'
 
@@ -8,6 +8,7 @@ export const PAGES: { path: string; label: string; icon: LucideIcon; tables: Tab
   { path: '/prs', label: 'my PRs', icon: GitPullRequest, tables: ['mine'] },
   { path: '/reviews', label: 'reviews', icon: Eye, tables: ['review', 'team'] },
   { path: '/workspaces', label: 'workspaces', icon: FolderGit2, tables: ['workspaces'] },
+  { path: '/usage', label: 'usage', icon: Gauge, tables: [] },
   { path: '/config', label: 'config', icon: Settings, tables: [] },
 ]
 
@@ -29,6 +30,6 @@ export const KEYS: [string, string][] = [
   ['c', 'collapse the table'],
   ['a', 'toggle filters'],
   ['/', 'search repo or title'],
-  ['t or 1–5', 'switch page'],
+  ['t or 1–6', 'switch page'],
   ['?', 'show these keys'],
 ]
