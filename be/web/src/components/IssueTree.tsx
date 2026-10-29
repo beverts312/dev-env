@@ -6,6 +6,7 @@ import { SectionState, TableSection } from '@/components/TableSection'
 import { WorkspaceDialog } from '@/components/WorkspaceDialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { useAction, useTable } from '@/hooks/queries'
 import { api, type Issue } from '@/lib/api'
 import { countTree, filterTree, useTreePicks, type ShownIssue } from '@/lib/filters'
@@ -54,6 +55,10 @@ export function IssueTree() {
         picked={picks.status}
         onChange={(status) => setPicks({ ...picks, status })}
       />
+      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Checkbox checked={!!picks.mine} onCheckedChange={(on) => setPicks({ ...picks, mine: on === true })} />
+        assigned to me
+      </label>
     </>
   )
 

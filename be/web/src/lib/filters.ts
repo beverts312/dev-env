@@ -31,9 +31,10 @@ export function toggleAll(f: PrFilters): PrFilters {
     : { ...PR_DEFAULTS, search: f.search }
 }
 
-// the Jira tree's filters: the issues in any checked project and status; none checked shows all
-export type TreePicks = { project: string[]; status: string[] }
-export const NO_PICKS: TreePicks = { project: [], status: [] }
+// the Jira tree's filters: the issues in any checked project and status; none checked shows all.
+// mine hides the issues assigned to someone else, keeping them only as context
+export type TreePicks = { project: string[]; status: string[]; mine?: boolean }
+export const NO_PICKS: TreePicks = { project: [], status: [], mine: false }
 
 export function useTreePicks() {
   return usePersistent<TreePicks>('be.filters.jira', NO_PICKS)
@@ -49,7 +50,8 @@ export type ShownIssue = {
 export function filterTree(issues: Issue[], picks: TreePicks): ShownIssue[] {
   const matches = (issue: Issue) =>
     (!picks.project.length || picks.project.includes(issue.project)) &&
-    (!picks.status.length || picks.status.includes(issue.status))
+    (!picks.status.length || picks.status.includes(issue.status)) &&
+    (!picks.mine || issue.mine)
   const walk = (issue: Issue): ShownIssue | null => {
     const children = issue.children.map(walk).filter((x): x is ShownIssue => x !== null)
     const match = matches(issue)
