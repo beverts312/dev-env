@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -12,6 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from be.server import mcp
 from be.server.api import ActionFailed, State, router
 
 log = logging.getLogger(__name__)
@@ -22,10 +24,20 @@ STATIC = Path(__file__).parent / "static"
 MISSING = "the web app isn't built; run `pnpm -C be/web install && pnpm -C be/web build`, or `python configure.py`"
 
 
-def create_app(state: State | None = None, static: Path | None = STATIC) -> FastAPI:
+def create_app(state: State | None = None, static: Path | None = STATIC, host: str = "127.0.0.1") -> FastAPI:
     """static is the built web app to serve, or None to serve only the API (as with --dev, where Vite
-    serves the app)."""
-    app = FastAPI(title="be", docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None)
+    serves the app); host is the address the server listens on, which /mcp checks requests' Host against
+    when it's local."""
+    todos = mcp.build()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        async with todos.session_manager.run():
+            yield
+
+    app = FastAPI(
+        title="be", docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None, lifespan=lifespan
+    )
     app.state.be = state or State()
 
     @app.middleware("http")
@@ -60,6 +72,8 @@ def create_app(state: State | None = None, static: Path | None = STATIC) -> Fast
         return JSONResponse({"message": problems or "bad input"}, status_code=400)
 
     app.include_router(router)
+    # before the web app's catch-all route, which would otherwise answer /mcp
+    app.router.routes.extend(mcp.routes(todos, host))
 
     if static is not None:
 

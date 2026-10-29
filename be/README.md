@@ -111,6 +111,17 @@ Each takes `--dir` to use another directory. `be server`'s **todos** page shows 
 check one off, add one by title, filter by tag, show done ones, or click one to edit its fields
 and notes (or delete it). Its Jira key links to the issue when `jira.url` is set.
 
+`be server` also serves an [MCP](https://modelcontextprotocol.io) server at `/mcp` (streamable
+HTTP, stateless) with tools for the same todos: `list_todos`, `get_todo`, `add_todo`,
+`update_todo`, `complete_todo`, `reopen_todo`, and `delete_todo`. Add it to Claude Code with:
+
+```bash
+claude mcp add --transport http be http://127.0.0.1:8765/mcp
+```
+
+It works only while `be server` is running. On a local address (the default `--host`) it
+accepts only `localhost`/`127.0.0.1` Host and Origin headers, to block DNS rebinding.
+
 ### `be server`
 
 | Command | What it does |

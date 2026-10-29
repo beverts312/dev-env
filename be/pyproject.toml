@@ -11,6 +11,7 @@ dependencies = [
     "click>=8.1",
     "cryptography>=42",
     "fastapi>=0.115",
+    "mcp>=2.3",
     "pyyaml>=6.0",
     "tomli-w>=1.0",
     "uvicorn>=0.30",

@@ -62,6 +62,7 @@ def server(
     claude.pr.model and cursor.pr.model apply at once unless --parent,
     --log-level, --agent, --claude-model or --cursor-model was given. The reviews
     page's agent toggle overrides that choice for a review started from the page.
+    /mcp serves an MCP server with tools for managing your todos, as `be todo` does.
     Ctrl-C stops it.
     """
     logging.basicConfig(format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -80,7 +81,7 @@ def server(
         if ctx.get_parameter_source(param) == ParameterSource.COMMANDLINE
     )
     state = State(parent, fixed, agent, claude_model, cursor_model)
-    app = create_app(state, static=None) if dev else create_app(state)
+    app = create_app(state, static=None, host=host) if dev else create_app(state, host=host)
     url = DEV_URL if dev else f"http://{host}:{port}"
     click.echo(f"serving the API on http://{host}:{port}; the app is at {url}" if dev else f"serving on {url}")
     if not no_open:
