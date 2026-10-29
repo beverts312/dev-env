@@ -90,6 +90,13 @@ export function useAction<A extends unknown[]>(
   })
 }
 
+export const todosKey = ['todos'] as const
+
+// The todos, read afresh from their files; with done, the done ones too
+export function useTodos(done = false) {
+  return useQuery({ queryKey: [...todosKey, done], queryFn: () => api.todos(done) })
+}
+
 // how often plan usage is reread, on the usage page and the reviews page's agent picker
 const USAGE_EVERY = 60_000
 

@@ -12,7 +12,7 @@ import click
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from be import claude_usage, config, cursor_usage, github, jira
+from be import claude_usage, config, cursor_usage, github, jira, todo
 from be.commands import pr, ws
 from be.server import views
 from be.server.views import MINE_BUTTONS, SettingError
@@ -312,6 +312,92 @@ def link_workspace(name: str, body: Link, request: Request) -> dict:
             log.warning("linking %s to workspace %s failed: %s", key, name, e)
             raise ActionFailed(f"{name}: could not save the link: {e.strerror or e}") from e
     return {"message": f"linked {key} to {name}; opened {name}"}
+
+
+def todo_row(t: dict) -> dict:
+    """t with its Jira issue's link, or "" when it has none or jira.url isn't set."""
+    url = ""
+    if t["jira"]:
+        try:
+            url = jira.issue_url(t["jira"])
+        except jira.JiraError:
+            pass
+    return {**t, "url": url}
+
+
+@router.get("/todos")
+def get_todos(done: bool = False) -> dict:
+    """The open todos (and done ones, when done), as `todo ls` orders them, or why they couldn't be read."""
+    out: dict = {"rows": None, "error": None, "dir": ""}
+    try:
+        root = todo.todo_dir()
+        out["dir"] = str(root)
+        out["rows"] = [todo_row(t) for t in todo.list_todos(root, include_done=done)]
+    except click.ClickException as e:
+        out["error"] = e.format_message()
+    except OSError as e:
+        out["error"] = f"could not read the todos: {e.strerror or e}"
+    return out
+
+
+class TodoFields(BaseModel):
+    title: str | None = None
+    due: str | None = None
+    priority: str | None = None
+    jira: str | None = None
+    tags: list[str] | None = None
+    notes: str | None = None
+
+
+def todo_action(request: Request, what: str, run) -> dict:
+    """Run a change to the todos, saying what it did, or failing with why it couldn't."""
+    with state(request).lock:
+        try:
+            changed = run(todo.todo_dir())
+        except click.ClickException as e:
+            log.warning("%s failed: %s", what, e.format_message())
+            raise ActionFailed(e.format_message()) from e
+        except OSError as e:
+            log.warning("%s failed: %s", what, e)
+            raise ActionFailed(f"could not save the todo: {e.strerror or e}") from e
+    log.info("%s %s", what, changed["id"])
+    return {"message": f"{what} {changed['title']}", "todo": todo_row(changed)}
+
+
+@router.post("/todos")
+def add_todo(body: TodoFields, request: Request) -> dict:
+    return todo_action(
+        request,
+        "added",
+        lambda root: todo.add(root, body.title or "", body.due, body.priority, body.tags or (), body.jira, body.notes or ""),
+    )
+
+
+@router.put("/todos/{ref}")
+def update_todo(ref: str, body: TodoFields, request: Request) -> dict:
+    """Change the fields given; an empty one clears it."""
+    return todo_action(request, "saved", lambda root: todo.update(root, ref, **body.model_dump(exclude_unset=True)))
+
+
+@router.post("/todos/{ref}/done")
+def done_todo(ref: str, request: Request) -> dict:
+    return todo_action(request, "done", lambda root: todo.set_done(root, ref))
+
+
+@router.post("/todos/{ref}/reopen")
+def reopen_todo(ref: str, request: Request) -> dict:
+    return todo_action(request, "reopened", lambda root: todo.set_done(root, ref, False))
+
+
+@router.delete("/todos/{ref}")
+def delete_todo(ref: str, request: Request) -> dict:
+    with state(request).lock:
+        try:
+            removed = todo.remove(todo.todo_dir(), ref)
+        except click.ClickException as e:
+            raise ActionFailed(e.format_message()) from e
+    log.info("deleted todo %s", removed)
+    return {"message": f"deleted {removed}"}
 
 
 @router.get("/config")

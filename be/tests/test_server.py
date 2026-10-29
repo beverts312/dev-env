@@ -658,3 +658,36 @@ def test_starred_shows_errors(serve, monkeypatch):
     monkeypatch.setattr(api.github, "pr_states", fail)
     data = c.post("/api/prs/starred", json={"prs": ["acme/api#7"]}).json()
     assert data == {"rows": None, "merged": [], "error": "gh not found"}
+
+
+def test_todos(serve, tmp_path, monkeypatch):
+    c, _, _, _ = serve
+    monkeypatch.setenv("BE_TODO_DIR", str(tmp_path / "todos"))
+    monkeypatch.setenv("JIRA_URL", "https://acme.atlassian.net")
+    assert c.get("/api/todos").json() == {"rows": [], "error": None, "dir": str(tmp_path / "todos")}
+    resp = c.post("/api/todos", json={"title": "Fix it", "jira": "acme-1", "tags": ["work"], "due": "2026-01-01"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["message"] == "added Fix it"
+    [row] = c.get("/api/todos").json()["rows"]
+    assert row["id"] == "fix-it" and row["url"] == "https://acme.atlassian.net/browse/ACME-1" and row["overdue"]
+    resp = c.put("/api/todos/fix-it", json={"notes": "details", "due": ""})
+    assert resp.status_code == 200 and resp.json()["todo"]["notes"] == "details"
+    assert resp.json()["todo"]["due"] is None
+    assert c.post("/api/todos/fix/done").status_code == 200
+    assert c.get("/api/todos").json()["rows"] == []
+    assert [t["status"] for t in c.get("/api/todos", params={"done": "true"}).json()["rows"]] == ["done"]
+    assert c.post("/api/todos/fix-it/reopen").status_code == 200
+    assert c.delete("/api/todos/fix-it").json() == {"message": "deleted fix-it"}
+    assert (tmp_path / "todos").is_dir() and not list((tmp_path / "todos").glob("*.md"))
+
+
+def test_todo_errors(serve, tmp_path, monkeypatch):
+    c, _, _, _ = serve
+    monkeypatch.setenv("BE_TODO_DIR", str(tmp_path / "todos"))
+    assert c.post("/api/todos", json={"title": " "}).status_code == 422
+    assert c.post("/api/todos", json={"title": "x", "priority": "urgent"}).json()["message"].startswith("priority")
+    assert c.post("/api/todos/nope/done").status_code == 422
+    assert c.delete("/api/todos/nope").json() == {"message": "no todo nope"}
+    # without jira.url a todo's Jira key just has no link
+    c.post("/api/todos", json={"title": "x", "jira": "ACME-2"})
+    assert c.get("/api/todos").json()["rows"][0]["url"] == ""

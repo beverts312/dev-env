@@ -23,11 +23,11 @@ import {
   SidebarRail,
   SidebarTrigger,
 } from '@/components/ui/sidebar'
-import { useTable } from '@/hooks/queries'
+import { useTable, useTodos } from '@/hooks/queries'
 import { useKeyboardNav } from '@/hooks/useKeyboardNav'
-import type { PrTableId, TableId } from '@/lib/api'
+import type { PrTableId } from '@/lib/api'
 import { countTree, filterTree, prShown, usePrFilters, useTreePicks } from '@/lib/filters'
-import { KEYS, PAGES } from '@/lib/pages'
+import { KEYS, PAGES, type CountId } from '@/lib/pages'
 import { usePersistent } from '@/lib/store'
 
 export function Layout() {
@@ -122,29 +122,31 @@ function NavItem({ page, active }: { page: (typeof PAGES)[number]; active: boole
 }
 
 // each page's badge counts the rows its filters show, across its tables
-function PageCount({ tables }: { tables: TableId[] }) {
+function PageCount({ tables }: { tables: CountId[] }) {
   const n = useShownCount(tables)
   return n ? <SidebarMenuBadge className="tabular-nums">{n}</SidebarMenuBadge> : null
 }
 
-function useShownCount(tables: TableId[]) {
+function useShownCount(tables: CountId[]) {
   const review = useTable('review').data?.rows
   const team = useTable('team').data?.rows
   const mine = useTable('mine').data?.rows
   const jira = useTable('jira').data?.rows
   const workspaces = useTable('workspaces').data?.rows
+  const todos = useTodos().data?.rows
   const [reviewFilters] = usePrFilters('review')
   const [teamFilters] = usePrFilters('team')
   const [mineFilters] = usePrFilters('mine')
   const [picks] = useTreePicks()
   const prs = (rows: typeof review, filters: typeof reviewFilters, table: PrTableId) =>
     (rows ?? []).filter((p) => prShown(p, filters, table === 'mine')).length
-  const counts: Record<TableId, () => number> = {
+  const counts: Record<CountId, () => number> = {
     review: () => prs(review, reviewFilters, 'review'),
     team: () => prs(team, teamFilters, 'team'),
     mine: () => prs(mine, mineFilters, 'mine'),
     jira: () => (jira ? countTree(filterTree(jira, picks)) : 0),
     workspaces: () => workspaces?.length ?? 0,
+    todos: () => todos?.length ?? 0,
   }
   return tables.reduce((n, t) => n + counts[t](), 0)
 }

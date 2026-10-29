@@ -127,6 +127,40 @@ export type CursorUsage = {
   fetched_at: number
 }
 
+export type Priority = 'high' | 'med' | 'low'
+
+// a todo, kept as a markdown file in todo.dir; its id is the file's name
+export type Todo = {
+  id: string
+  title: string
+  status: 'open' | 'done'
+  priority: Priority | null
+  // YYYY-MM-DD dates
+  due: string | null
+  created: string | null
+  completed: string | null
+  jira: string | null
+  // the Jira issue's link, or "" without one
+  url: string
+  tags: string[]
+  // the file's body
+  notes: string
+  overdue: boolean
+}
+
+// what can be changed on a todo; an empty value clears it
+export type TodoFields = {
+  title?: string
+  due?: string
+  priority?: string
+  jira?: string
+  tags?: string[]
+  notes?: string
+}
+
+export type TodosData = { rows: Todo[] | null; error: string | null; dir: string }
+export type TodoDone = Done & { todo: Todo }
+
 // the starred PRs as they are now: rows for those not merged, and the names of those merged
 export type StarredData = { rows: Pr[] | null; merged: string[]; error: string | null }
 
@@ -181,6 +215,12 @@ export const api = {
   unsetConfig: (key: string) => request<Done>('DELETE', `/config/${segment(key)}`),
   claudeUsage: () => request<ClaudeUsage>('GET', '/claude-usage'),
   cursorUsage: () => request<CursorUsage>('GET', '/cursor-usage'),
+  todos: (done = false) => request<TodosData>('GET', `/todos${done ? '?done=true' : ''}`),
+  addTodo: (fields: TodoFields) => request<TodoDone>('POST', '/todos', fields),
+  updateTodo: (id: string, fields: TodoFields) => request<TodoDone>('PUT', `/todos/${segment(id)}`, fields),
+  doneTodo: (id: string) => request<TodoDone>('POST', `/todos/${segment(id)}/done`),
+  reopenTodo: (id: string) => request<TodoDone>('POST', `/todos/${segment(id)}/reopen`),
+  deleteTodo: (id: string) => request<Done>('DELETE', `/todos/${segment(id)}`),
 }
 
 export const prName = (p: Pr) => `${p.repo}#${p.number}`

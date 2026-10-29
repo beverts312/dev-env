@@ -58,6 +58,7 @@ SETTINGS = {
             "Model for Cursor pr reviews, passed as agent --model",
         ),
         Setting("ws.dir", "WS_DIR", "Parent directory for workspaces"),
+        Setting("todo.dir", "BE_TODO_DIR", "Directory that holds the todo markdown files", "~/notes/todos"),
         Setting("claude.model", "BE_CLAUDE_MODEL", "Model passed as claude --model", "claude-opus-5-5"),
         Setting("cmux.bin", "BE_CMUX_BIN", "Path to the cmux binary"),
         Setting(

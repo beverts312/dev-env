@@ -14,6 +14,7 @@ from be.commands.jira import jira_group
 from be.commands.kube import kube
 from be.commands.pr import pr
 from be.server import server
+from be.commands.todo import todo_group
 from be.commands.ws import ws
 
 
@@ -32,6 +33,7 @@ cli.add_command(jira_group)
 cli.add_command(kube)
 cli.add_command(pr)
 cli.add_command(server)
+cli.add_command(todo_group)
 cli.add_command(ws)
 
 
