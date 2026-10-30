@@ -14,7 +14,7 @@ import click
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from be import claude_sessions, claude_usage, config, cursor_usage, gcal, github, jira, todo
+from be import claude_sessions, claude_usage, config, cursor_usage, gcal, github, gmail, jira, todo
 from be.commands import pr, ws
 from be.server import views
 from be.server.views import MINE_BUTTONS, SettingError
@@ -599,6 +599,81 @@ def get_calendar(day: str, tz: str = "UTC") -> dict:
         log.warning("reading the calendar failed: %s", e)
         out["error"] = str(e)
     return out
+
+
+@router.get("/mail")
+def get_mail(q: str = "in:inbox", page: str | None = None) -> dict:
+    """The threads the Gmail query q finds, or why they couldn't be read."""
+    out = {"threads": [], "next_page": None, "error": None, "fetched_at": time.time()}
+    try:
+        out["threads"], out["next_page"] = gmail.list_threads(q, page)
+    except gmail.MailError as e:
+        log.warning("reading mail failed: %s", e)
+        out["error"] = str(e)
+    return out
+
+
+@router.get("/mail/actions")
+def mail_actions() -> dict:
+    return {"actions": gmail.ACTIONS}
+
+
+def mail_call(what: str, run):
+    try:
+        return run()
+    except gmail.MailError as e:
+        log.warning("%s failed: %s", what, e)
+        raise ActionFailed(f"{what}: {e}") from e
+
+
+@router.get("/mail/{thread_id}")
+def get_thread(thread_id: str) -> dict:
+    return mail_call("reading the thread", lambda: gmail.get_thread(thread_id))
+
+
+class Labels(BaseModel):
+    add: list[str] = []
+    remove: list[str] = []
+
+
+@router.post("/mail/{thread_id}/modify")
+def modify_thread(thread_id: str, body: Labels) -> dict:
+    if not body.add and not body.remove:
+        raise HTTPException(400, "give labels to add or remove")
+    mail_call("changing the thread", lambda: gmail.modify(thread_id, body.add, body.remove))
+    return {"message": "updated the thread"}
+
+
+class MailAction(BaseModel):
+    action: str | None = None
+    prompt: str | None = None
+
+
+@router.post("/mail/{thread_id}/action")
+def mail_action(thread_id: str, body: MailAction, request: Request) -> dict:
+    """Open a cmux workspace running claude on the thread, with a built-in action's prompt or your own."""
+    if body.action:
+        found = next((a for a in gmail.ACTIONS if a["key"] == body.action), None)
+        if not found:
+            raise HTTPException(400, f"no mail action {body.action!r}")
+        prompt, label = found["prompt"], found["label"].lower()
+    else:
+        prompt, label = (body.prompt or "").strip(), "claude"
+        if not prompt:
+            raise HTTPException(400, "say what to ask claude")
+    thread = mail_call("reading the thread", lambda: gmail.get_thread(thread_id))
+    with state(request).lock:
+        try:
+            window, _ = config.resolve("cmux.window")
+            ws.mail_action(gmail.save_thread(thread), prompt, f"mail: {thread['subject'][:40]}", window=window)
+        except click.ClickException as e:
+            log.warning("opening a mail action failed: %s", e.format_message())
+            raise ActionFailed(f"mail: {e.format_message()}") from e
+        except click.exceptions.Exit as e:
+            log.warning("opening a mail action failed: cmux could not open a workspace")
+            raise ActionFailed("mail: cmux could not open a workspace") from e
+    log.info("opened %s on mail thread %s", label, thread_id)
+    return {"message": f"opened claude: {label}"}
 
 
 class Value(BaseModel):

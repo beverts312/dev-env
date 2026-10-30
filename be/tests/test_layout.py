@@ -156,3 +156,16 @@ def test_cloud_issue_defaults_to_home(monkeypatch):
     monkeypatch.setattr(cmux, "new_workspace", lambda binary, args: created.append(args))
     ws.cloud_issue("x", "opus", "w1")
     assert created[0][3] == str(Path.home())
+
+
+def test_mail_action_opens_claude_on_the_email(tmp_path, monkeypatch):
+    from be import cmux
+
+    created = []
+    monkeypatch.setattr(cmux, "start", lambda: "cmux")
+    monkeypatch.setattr(cmux, "new_workspace", lambda binary, args: created.append(args))
+    email = tmp_path / "mail" / "t1.md"
+    ws.mail_action(email, "Summarize this.", "mail: Budget", "opus", "w1")
+    (args,) = created
+    assert args[:2] == ["--name", "mail: Budget"]
+    assert args[7] == f"claude --model opus --add-dir {tmp_path / 'mail'} -- 'Summarize this.\n\nEmail: @{email}'"

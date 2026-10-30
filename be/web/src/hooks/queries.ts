@@ -129,3 +129,27 @@ export function useCalendar(day: string, today: boolean) {
     placeholderData: (prev) => prev,
   })
 }
+
+const MAIL_EVERY = 60_000
+export const mailKey = ['mail']
+
+export function useMail(q: string) {
+  return useQuery({
+    queryKey: [...mailKey, 'list', q],
+    queryFn: () => api.mail(q),
+    refetchInterval: MAIL_EVERY,
+    placeholderData: (prev) => prev,
+  })
+}
+
+export function useMailThread(id: string | null) {
+  return useQuery({
+    queryKey: [...mailKey, 'thread', id],
+    queryFn: () => api.mailThread(id!),
+    enabled: !!id,
+  })
+}
+
+export function useMailActions() {
+  return useQuery({ queryKey: [...mailKey, 'actions'], queryFn: api.mailActions, staleTime: Infinity })
+}

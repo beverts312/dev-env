@@ -1,4 +1,4 @@
-import { Eye, FolderGit2, Gauge, GitPullRequest, ListTodo, Settings, type LucideIcon } from 'lucide-react'
+import { Eye, FolderGit2, Gauge, GitPullRequest, ListTodo, Mail, Settings, type LucideIcon } from 'lucide-react'
 
 import type { TableId } from '@/lib/api'
 
@@ -11,6 +11,7 @@ export const PAGES: { path: string; label: string; icon: LucideIcon; tables: Cou
   { path: '/prs', label: 'my PRs', icon: GitPullRequest, tables: ['mine'] },
   { path: '/reviews', label: 'reviews', icon: Eye, tables: ['review', 'team'] },
   { path: '/workspaces', label: 'workspaces', icon: FolderGit2, tables: ['workspaces'] },
+  { path: '/mail', label: 'mail', icon: Mail, tables: [] },
   { path: '/usage', label: 'usage', icon: Gauge, tables: [] },
   { path: '/config', label: 'config', icon: Settings, tables: [] },
 ]
@@ -24,10 +25,11 @@ export const TITLES: Record<string, string> = {
 
 export const KEYS: [string, string][] = [
   ['j / k', 'move between rows'],
-  ['enter', 'review, open the issue’s workspace, open the workspace, or edit the todo'],
+  ['enter', 'review, open the issue’s workspace, open the workspace, edit the todo, or read the email'],
   ['o', 'open in the browser'],
   ['r', 'mark your draft ready'],
   ['u', 'enable auto-merge on your PR'],
+  ['e', 'archive the email'],
   ['x', 'check your PR for bulk actions, or check off the todo'],
   ['s', 'star or unstar the PR'],
   ['h / l', 'close or open a Jira issue’s children'],
@@ -35,6 +37,6 @@ export const KEYS: [string, string][] = [
   ['c', 'collapse the table'],
   ['a', 'toggle filters'],
   ['/', 'search repo or title'],
-  ['t or 1–6', 'switch page'],
+  ['t or 1–7', 'switch page'],
   ['?', 'show these keys'],
 ]

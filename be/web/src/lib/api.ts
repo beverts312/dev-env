@@ -199,6 +199,43 @@ export type TodoDone = Done & { todo: Todo }
 // the starred PRs as they are now: rows for those not merged, and the names of those merged
 export type StarredData = { rows: Pr[] | null; merged: string[]; error: string | null }
 
+// a Gmail thread in the mail list; date is milliseconds since the epoch, as a string
+export type MailThread = {
+  id: string
+  from: string
+  subject: string
+  snippet: string
+  date: string
+  unread: boolean
+  labels: string[]
+  count: number
+}
+
+export type MailList = {
+  threads: MailThread[]
+  next_page: string | null
+  error: string | null
+  // seconds since the epoch
+  fetched_at: number
+}
+
+export type MailMessage = {
+  id: string
+  from: string
+  to: string
+  cc: string
+  subject: string
+  date: string
+  date_ms: string
+  unread: boolean
+  text: string
+  html: string
+}
+
+export type MailThreadDetail = { id: string; subject: string; messages: MailMessage[] }
+
+export type MailAction = { key: string; label: string; prompt: string }
+
 export type Done = { message: string }
 export type BulkDone = Done & { results: { pr: string; ok: boolean; message: string }[] }
 
@@ -265,6 +302,13 @@ export const api = {
   cursorUsage: () => request<CursorUsage>('GET', '/cursor-usage'),
   calendar: (day: string, tz: string) =>
     request<CalendarDay>('GET', `/calendar?day=${segment(day)}&tz=${segment(tz)}`),
+  mail: (q: string) => request<MailList>('GET', `/mail?q=${segment(q)}`),
+  mailThread: (id: string) => request<MailThreadDetail>('GET', `/mail/${segment(id)}`),
+  mailActions: () => request<{ actions: MailAction[] }>('GET', '/mail/actions'),
+  modifyMail: (id: string, labels: { add?: string[]; remove?: string[] }) =>
+    request<Done>('POST', `/mail/${segment(id)}/modify`, labels),
+  mailAction: (id: string, ask: { action: string } | { prompt: string }) =>
+    request<Done>('POST', `/mail/${segment(id)}/action`, ask),
   todos: (done = false) => request<TodosData>('GET', `/todos${done ? '?done=true' : ''}`),
   addTodo: (fields: TodoFields) => request<TodoDone>('POST', '/todos', fields),
   updateTodo: (id: string, fields: TodoFields) => request<TodoDone>('PUT', `/todos/${segment(id)}`, fields),

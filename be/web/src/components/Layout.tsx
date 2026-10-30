@@ -92,8 +92,13 @@ export function Layout() {
             <ThemeToggle />
           </div>
         </header>
-        {/* home is wider, for its calendar pane */}
-        <div className={cn('mx-auto w-full space-y-4 p-4', pathname === '/' ? 'max-w-[96rem]' : 'max-w-7xl')}>
+        {/* home is wider, for its calendar pane; mail is full width, its list against the sidebar */}
+        <div
+          className={cn(
+            'mx-auto w-full space-y-4 p-4',
+            pathname === '/' ? 'max-w-[96rem]' : pathname === '/mail' ? 'max-w-none pl-0' : 'max-w-7xl',
+          )}
+        >
           <Outlet />
         </div>
       </SidebarInset>

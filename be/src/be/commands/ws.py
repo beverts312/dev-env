@@ -356,6 +356,31 @@ def cloud_issue(text: str, model: str | None = None, window: str | None = None) 
     )
 
 
+def mail_action(path: Path, prompt: str, name: str, model: str | None = None, window: str | None = None) -> None:
+    """Open a cmux workspace running claude on prompt, then the email saved at path, in ws.dir or home."""
+    if not model:
+        model, _ = config.resolve("claude.model")
+    parent, _ = config.resolve("ws.dir")
+    cwd = Path(parent).expanduser() if parent else Path.home()
+    binary = cmux.start()
+    # --add-dir takes several dirs, so -- keeps it from taking the prompt as one
+    command = claude_command([path.parent], model or "", ["--", shlex.quote(f"{prompt}\n\nEmail: @{path}")])
+    cmux.new_workspace(
+        binary,
+        [
+            "--name",
+            name,
+            "--cwd",
+            str(cwd),
+            "--focus",
+            "true",
+            "--command",
+            command,
+            *window_args(target_window(binary, window)),
+        ],
+    )
+
+
 MANIFEST = "workspace.yml"
 
 

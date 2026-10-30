@@ -8,7 +8,7 @@ from datetime import date
 import pytest
 from click.testing import CliRunner
 
-from be import gcal
+from be import gcal, google
 from be.cli import cli
 from be.commands import calendar
 
@@ -20,7 +20,7 @@ def configure(*pairs):
 
 @pytest.fixture(autouse=True)
 def no_cached_token(monkeypatch):
-    monkeypatch.setattr(gcal, "_cached", None)
+    monkeypatch.setattr(google, "_cached", None)
 
 
 def event(**fields):

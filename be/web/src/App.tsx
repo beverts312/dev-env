@@ -2,6 +2,7 @@ import { BrowserRouter, Route, Routes } from 'react-router'
 
 import { Layout } from '@/components/Layout'
 import { Config } from '@/pages/Config'
+import { Mail } from '@/pages/Mail'
 import { MyPrs } from '@/pages/MyPrs'
 import { NotFound } from '@/pages/NotFound'
 import { Reviews } from '@/pages/Reviews'
@@ -18,6 +19,7 @@ export default function App() {
           <Route path="prs" element={<MyPrs />} />
           <Route path="reviews" element={<Reviews />} />
           <Route path="workspaces" element={<Workspaces />} />
+          <Route path="mail" element={<Mail />} />
           <Route path="usage" element={<Usage />} />
           <Route path="config" element={<Config />} />
           <Route path="*" element={<NotFound />} />
