@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 
 import type { Todo, TodosData } from '@/lib/api'
-import { Todos } from '@/pages/Todos'
+import { TodoTable } from '@/components/TodoTable'
 import { mockApi, renderApp } from '@/test/render'
 
 const todo = (fields: Partial<Todo>): Todo => ({
@@ -31,10 +31,10 @@ const DATA: TodosData = {
   dir: '/notes/todos',
 }
 
-describe('Todos', () => {
+describe('TodoTable', () => {
   it('shows each todo with its due date, priority, Jira link and tags', async () => {
     mockApi({ 'GET /todos': DATA })
-    renderApp(<Todos />)
+    renderApp(<TodoTable />)
     expect(await screen.findByRole('button', { name: 'Renew cert' })).toBeInTheDocument()
     expect(screen.getByText('2026-01-01')).toHaveClass('text-destructive')
     expect(screen.getByText('see runbook')).toBeInTheDocument()
@@ -48,7 +48,7 @@ describe('Todos', () => {
       'POST /todos': { message: 'added Call bob', todo: todo({ id: 'call-bob', title: 'Call bob' }) },
       'POST /todos/buy-milk/done': { message: 'done Buy milk', todo: todo({ id: 'buy-milk', status: 'done' }) },
     })
-    renderApp(<Todos />)
+    renderApp(<TodoTable />)
     const user = userEvent.setup()
     await user.type(await screen.findByRole('textbox', { name: 'new todo' }), 'Call bob{Enter}')
     await waitFor(() => expect(calls.some((c) => c.method === 'POST' && c.path === '/todos')).toBe(true))
@@ -62,7 +62,7 @@ describe('Todos', () => {
       'GET /todos': DATA,
       'PUT /todos/buy-milk': { message: 'saved Buy milk', todo: todo({ id: 'buy-milk' }) },
     })
-    renderApp(<Todos />)
+    renderApp(<TodoTable />)
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: 'Buy milk' }))
     await user.type(screen.getByLabelText('notes'), 'oat')

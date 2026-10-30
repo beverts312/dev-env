@@ -23,7 +23,7 @@ import {
   SidebarRail,
   SidebarTrigger,
 } from '@/components/ui/sidebar'
-import { useTable, useTodos } from '@/hooks/queries'
+import { useTable } from '@/hooks/queries'
 import { useKeyboardNav } from '@/hooks/useKeyboardNav'
 import type { PrTableId } from '@/lib/api'
 import { countTree, filterTree, prShown, usePrFilters, useTreePicks } from '@/lib/filters'
@@ -135,7 +135,6 @@ function useShownCount(tables: CountId[]) {
   const mine = useTable('mine').data?.rows
   const jira = useTable('jira').data?.rows
   const workspaces = useTable('workspaces').data?.rows
-  const todos = useTodos().data?.rows
   const [reviewFilters] = usePrFilters('review')
   const [teamFilters] = usePrFilters('team')
   const [mineFilters] = usePrFilters('mine')
@@ -148,7 +147,6 @@ function useShownCount(tables: CountId[]) {
     mine: () => prs(mine, mineFilters, 'mine'),
     jira: () => (jira ? countTree(filterTree(jira, picks)) : 0),
     workspaces: () => workspaces?.length ?? 0,
-    todos: () => todos?.length ?? 0,
   }
   return tables.reduce((n, t) => n + counts[t](), 0)
 }

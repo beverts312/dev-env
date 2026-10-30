@@ -1,6 +1,7 @@
 import { CalendarPane } from '@/components/CalendarPane'
 import { IssueTree } from '@/components/IssueTree'
 import { StarredTable } from '@/components/PrTable'
+import { TodoTable } from '@/components/TodoTable'
 import { TITLES } from '@/lib/pages'
 
 export function Home() {
@@ -9,6 +10,7 @@ export function Home() {
       <div className="min-w-0 space-y-4">
         <StarredTable title={TITLES.starred} />
         <IssueTree />
+        <TodoTable />
       </div>
       <aside className="lg:sticky lg:top-16 lg:max-h-[calc(100svh-5rem)] lg:self-start lg:overflow-auto">
         <CalendarPane />
