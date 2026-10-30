@@ -224,6 +224,23 @@ def test_link_workspace(serve, tmp_path, monkeypatch):
     assert c.post("/api/workspaces/proj/link", json={"key": "not a key"}).status_code == 400
 
 
+def test_start_work(serve, tmp_path, monkeypatch):
+    c, _, _, _ = serve
+    spaces = tmp_path / "spaces"
+    (spaces / "proj").mkdir(parents=True)
+    config.set_value("ws.dir", str(spaces))
+    started = []
+    monkeypatch.setattr(ws, "start_work", lambda root, key, model=None, window=None: started.append((root, key)))
+    resp = c.post("/api/workspaces/proj/start", json={"key": "acme-12"})
+    assert resp.json() == {"message": "started ACME-12 in proj"}
+    assert started == [((spaces / "proj").resolve(), "ACME-12")]
+    resp = c.post("/api/workspaces/nope/start", json={"key": "ACME-12"})
+    assert resp.status_code == 422 and "nope is not a workspace" in resp.json()["message"]
+    assert c.post("/api/workspaces/proj/start", json={"key": "not a key"}).status_code == 400
+    assert c.post("/api/workspaces/%2E%2E/start", json={"key": "ACME-12"}).status_code in (400, 404)
+    assert len(started) == 1
+
+
 def test_review(serve):
     c, _, reviews, parent = serve
     resp = c.post("/api/prs/review", json={"repo": "acme/api", "number": 7})

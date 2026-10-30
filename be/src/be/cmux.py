@@ -150,6 +150,33 @@ def show_workspace(cmux: str, window: str, workspace: str) -> None:
         subprocess.run(["open", "-a", "cmux"])
 
 
+def new_pane(cmux: str, window: str, workspace: str, command: str) -> None:
+    """Split a focused terminal pane running command off to the right of workspace."""
+    result = subprocess.run(
+        [
+            cmux,
+            "new-pane",
+            "--type",
+            "terminal",
+            "--direction",
+            "right",
+            "--window",
+            window,
+            "--workspace",
+            workspace,
+            "--command",
+            command,
+            "--focus",
+            "true",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        sys.stderr.write(result.stderr)
+        raise click.ClickException(f"could not open a pane in cmux workspace {workspace}")
+
+
 def focus_existing(cmux: str, title: str) -> bool:
     """Switch to the open workspace titled title; False if there is none."""
     found = find_workspace(cmux, title)

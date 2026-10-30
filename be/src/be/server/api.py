@@ -315,6 +315,25 @@ def link_workspace(name: str, body: Link, request: Request) -> dict:
     return {"message": f"linked {key} to {name}; opened {name}"}
 
 
+@router.post("/workspaces/{name}/start")
+def start_work(name: str, body: Link, request: Request) -> dict:
+    """Open the workspace in ws.dir and start claude in plan mode on the issue, in a new pane."""
+    valid_name(name)
+    key = body.key.strip().upper()
+    if not jira.ISSUE_KEY.fullmatch(key):
+        raise HTTPException(400, f"{body.key!r} is not an issue key")
+    with state(request).lock:
+        try:
+            root = find_workspace(name)
+            window, _ = config.resolve("cmux.window")
+            ws.start_work(root, key, window=window)
+        except click.ClickException as e:
+            log.warning("starting %s in workspace %s failed: %s", key, name, e.format_message())
+            raise ActionFailed(f"{name}: {e.format_message()}") from e
+    log.info("started %s in workspace %s", key, name)
+    return {"message": f"started {key} in {name}"}
+
+
 def todo_row(t: dict) -> dict:
     """t with its Jira issue's link, or "" when it has none or jira.url isn't set."""
     url = ""

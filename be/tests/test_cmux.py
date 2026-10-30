@@ -77,3 +77,19 @@ def test_show_workspace_reports_failure(fake_cmux):
 def test_window_title_uses_selected_workspace(fake_cmux):
     assert cmux.window_title("cmux", "w2") == "Fix login"
     assert cmux.window_title("cmux", "w1") == "other"
+
+
+def test_new_pane_runs_command_in_workspace(fake_cmux):
+    calls, _ = fake_cmux
+    cmux.new_pane("cmux", "w2", "c", "claude")
+    assert calls == [
+        ["cmux", "new-pane", "--type", "terminal", "--direction", "right", "--window", "w2",
+         "--workspace", "c", "--command", "claude", "--focus", "true"]
+    ]
+
+
+def test_new_pane_reports_failure(fake_cmux):
+    _, failing = fake_cmux
+    failing.add("new-pane")
+    with pytest.raises(click.ClickException, match="could not open a pane"):
+        cmux.new_pane("cmux", "w2", "c", "claude")

@@ -48,12 +48,14 @@ def terminal_pane(name: str, cwd: Path, command: str | None = None, focus: bool 
     return {"pane": {"surfaces": [surface]}}
 
 
-def claude_command(extra_dirs: list[Path], model: str = "") -> str:
+def claude_command(extra_dirs: list[Path], model: str = "", extra: list[str] = ()) -> str:
+    """claude with its model and dirs, then extra, already quoted."""
     parts = ["claude"]
     if model:
         parts += ["--model", shlex.quote(model)]
     for directory in extra_dirs:
         parts += ["--add-dir", shlex.quote(str(directory))]
+    parts += extra
     return " ".join(parts)
 
 
@@ -295,6 +297,22 @@ def open_root(root: Path, model: str | None = None, window: str | None = None) -
             *window_args(target),
         ],
     )
+
+
+def start_work(root: Path, key: str, model: str | None = None, window: str | None = None) -> None:
+    """Open root's workspace and start claude in plan mode on key, in a new pane beside the others."""
+    if not model:
+        model, _ = config.resolve("claude.model")
+    open_root(root, model, window)
+    binary = cmux.start()
+    name = read_manifest(root).get("issue_name") or root.name
+    found = cmux.find_workspace(binary, name)
+    if found is None:
+        raise click.ClickException(f"could not find the open cmux workspace {name}")
+    prompt = shlex.quote(f"lets get started on {key}")
+    command = claude_command([], model or "", ["--permission-mode", "plan", prompt])
+    # new-pane has no --cwd
+    cmux.new_pane(binary, *found, f"cd {shlex.quote(str(root))} && {command}")
 
 
 MANIFEST = "workspace.yml"

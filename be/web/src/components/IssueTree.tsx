@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ChevronRight, FolderOpen, FolderPlus } from 'lucide-react'
+import { ChevronRight, FolderOpen, FolderPlus, Play } from 'lucide-react'
 
 import { MultiFilter } from '@/components/MultiFilter'
 import { SectionState, TableSection } from '@/components/TableSection'
@@ -20,7 +20,8 @@ const STATUS_STYLES: Record<string, string> = {
 }
 
 // The Jira issues assigned to you, as `jira ls` nests them. Opening an issue opens its workspace,
-// or offers to create one or link one
+// or offers to create one or link one. Your To Do issues with a workspace can also start work: a new pane there
+// running claude in plan mode on the issue
 export function IssueTree() {
   const data = useTable('jira')
   const spaces = useTable('workspaces')
@@ -28,6 +29,7 @@ export function IssueTree() {
   const [closed, setClosed] = usePersistent<string[]>('be.tree.closed', [])
   const [creating, setCreating] = useState<Issue | null>(null)
   const open = useAction(api.openWorkspace)
+  const start = useAction(api.startWork)
 
   const issues = data.data?.rows ?? null
   const shown = useMemo(() => filterTree(issues ?? [], picks), [issues, picks])
@@ -40,6 +42,7 @@ export function IssueTree() {
     if (issue.workspace) open.mutate([issue.workspace])
     else setCreating(issue)
   }
+  const startIssue = (issue: Issue) => start.mutate([issue.workspace, issue.key])
 
   const toolbar = issues && (
     <>
@@ -81,7 +84,15 @@ export function IssueTree() {
       ) : (
         <ul className="py-1 text-sm" role="tree">
           {shown.map((node) => (
-            <IssueNode key={node.issue.key} node={node} depth={0} closed={closed} onToggle={toggle} onOpen={openIssue} />
+            <IssueNode
+              key={node.issue.key}
+              node={node}
+              depth={0}
+              closed={closed}
+              onToggle={toggle}
+              onOpen={openIssue}
+              onStart={startIssue}
+            />
           ))}
         </ul>
       )}
@@ -103,6 +114,7 @@ function IssueNode({
   closed,
   onToggle,
   onOpen,
+  onStart,
   parentKey,
 }: {
   node: ShownIssue
@@ -110,11 +122,14 @@ function IssueNode({
   closed: string[]
   onToggle: (key: string, open: boolean) => void
   onOpen: (issue: Issue) => void
+  onStart: (issue: Issue) => void
   parentKey?: string
 }) {
   const { issue, context, children } = node
   const isOpen = !closed.includes(issue.key)
   const top = depth === 0
+  const startable = issue.mine && issue.category === 'new' && !!issue.workspace
+  const reveal = 'shrink-0 opacity-0 group-hover:opacity-100 group-data-[selected=true]:opacity-100 focus-visible:opacity-100'
   return (
     <li role="treeitem" aria-expanded={children.length ? isOpen : undefined}>
       <div
@@ -170,11 +185,17 @@ function IssueNode({
         ) : (
           top && issue.parent && <span className="shrink-0 text-xs text-muted-foreground">in {issue.parent}</span>
         )}
+        {startable && (
+          <Button variant="ghost" size="xs" className={cn('ml-auto', reveal)} onClick={() => onStart(issue)}>
+            <Play />
+            start work
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="xs"
           data-nav-primary
-          className="ml-auto shrink-0 opacity-0 group-hover:opacity-100 group-data-[selected=true]:opacity-100 focus-visible:opacity-100"
+          className={cn(!startable && 'ml-auto', reveal)}
           onClick={() => onOpen(issue)}
         >
           {issue.workspace ? <FolderOpen /> : <FolderPlus />}
@@ -191,6 +212,7 @@ function IssueNode({
               closed={closed}
               onToggle={onToggle}
               onOpen={onOpen}
+              onStart={onStart}
               parentKey={issue.key}
             />
           ))}

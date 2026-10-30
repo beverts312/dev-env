@@ -233,6 +233,8 @@ export const api = {
   }) => request<Done>('POST', '/workspaces', fields),
   linkWorkspace: (name: string, key: string) =>
     request<Done>('POST', `/workspaces/${segment(name)}/link`, { key }),
+  startWork: (name: string, key: string) =>
+    request<Done>('POST', `/workspaces/${segment(name)}/start`, { key }),
   config: () => request<ConfigData>('GET', '/config'),
   setConfig: (key: string, value: string, name = '') =>
     request<Done>('PUT', `/config/${segment(key)}`, { value, name }),

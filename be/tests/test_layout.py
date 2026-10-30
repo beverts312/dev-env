@@ -89,3 +89,31 @@ def test_layout_matches_original(tmp_path):
     extra = [tmp_path / "notes", tmp_path / "other" / "notes"]
     args = (tmp_path, ["api", "web"], extra, "claude-opus-5-5")
     assert json.dumps(ws.build_layout(*args)) == json.dumps(original.build_layout(*args))
+
+
+def test_start_work_opens_plan_mode_pane(tmp_path, monkeypatch):
+    from be import cmux
+
+    root = tmp_path / "my proj"
+    root.mkdir()
+    (root / "workspace.yml").write_text("issue_name: Fix login\n")
+    opened, panes = [], []
+    monkeypatch.setattr(ws, "open_root", lambda root, model=None, window=None: opened.append((root, model, window)))
+    monkeypatch.setattr(cmux, "start", lambda: "cmux")
+    monkeypatch.setattr(cmux, "find_workspace", lambda binary, title: ("w1", "ws1") if title == "Fix login" else None)
+    monkeypatch.setattr(cmux, "new_pane", lambda *args: panes.append(args))
+    ws.start_work(root, "ACME-12", "opus", "w1")
+    assert opened == [(root, "opus", "w1")]
+    assert panes == [
+        ("cmux", "w1", "ws1", f"cd '{root}' && claude --model opus --permission-mode plan 'lets get started on ACME-12'")
+    ]
+
+
+def test_start_work_needs_the_open_workspace(tmp_path, monkeypatch):
+    from be import cmux
+
+    monkeypatch.setattr(ws, "open_root", lambda root, model=None, window=None: None)
+    monkeypatch.setattr(cmux, "start", lambda: "cmux")
+    monkeypatch.setattr(cmux, "find_workspace", lambda binary, title: None)
+    with pytest.raises(click.ClickException, match="could not find"):
+        ws.start_work(tmp_path, "ACME-12", "opus")
