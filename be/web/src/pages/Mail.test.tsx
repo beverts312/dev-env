@@ -59,12 +59,12 @@ describe('Mail', () => {
     )
   })
 
-  it('archives from the list', async () => {
-    const calls = mockApi({ [inbox]: list([thread('t1')]), 'POST /mail/t1/modify': { message: 'updated the thread' } })
+  it('deletes from the list', async () => {
+    const calls = mockApi({ [inbox]: list([thread('t1')]), 'POST /mail/t1/trash': { message: 'moved the thread to Trash' } })
     renderApp(<Mail />)
-    await userEvent.click(await screen.findByRole('button', { name: 'archive subject t1' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'delete subject t1' }))
     await waitFor(() =>
-      expect(calls).toContainEqual({ method: 'POST', path: '/mail/t1/modify', body: { remove: ['INBOX'] } }),
+      expect(calls).toContainEqual({ method: 'POST', path: '/mail/t1/trash', body: undefined }),
     )
   })
 
@@ -116,5 +116,36 @@ describe('Mail row claude menu', () => {
       expect(calls).toContainEqual({ method: 'POST', path: '/mail/t1/action', body: { action: 'summarize' } }),
     )
     expect(screen.getByText('pick an email')).toBeInTheDocument()
+  })
+})
+
+describe('Mail multi-select', () => {
+  it('checks threads, shift-clicks a range and deletes them together', async () => {
+    const calls = mockApi({
+      [inbox]: list([thread('t1'), thread('t2'), thread('t3'), thread('t4')]),
+      'POST /mail/trash': { message: 'moved 3 threads to Trash' },
+    })
+    renderApp(<Mail />)
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'select subject t1' }))
+    const user = userEvent.setup()
+    await user.keyboard('{Shift>}')
+    await user.click(screen.getByRole('checkbox', { name: 'select subject t3' }))
+    await user.keyboard('{/Shift}')
+    expect(screen.getByText('3 selected')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'select all' })).toHaveAttribute('data-state', 'indeterminate')
+    await userEvent.click(screen.getByRole('button', { name: 'delete 3' }))
+    await waitFor(() =>
+      expect(calls).toContainEqual({ method: 'POST', path: '/mail/trash', body: { ids: ['t1', 't2', 't3'] } }),
+    )
+    await waitFor(() => expect(screen.queryByText('3 selected')).not.toBeInTheDocument())
+  })
+
+  it('selects all and clears', async () => {
+    mockApi({ [inbox]: list([thread('t1'), thread('t2')]) })
+    renderApp(<Mail />)
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'select all' }))
+    expect(screen.getByText('2 selected')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'clear' }))
+    expect(screen.queryByText('2 selected')).not.toBeInTheDocument()
   })
 })

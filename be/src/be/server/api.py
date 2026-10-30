@@ -6,6 +6,7 @@ import logging
 import os
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -642,6 +643,38 @@ def modify_thread(thread_id: str, body: Labels) -> dict:
         raise HTTPException(400, "give labels to add or remove")
     mail_call("changing the thread", lambda: gmail.modify(thread_id, body.add, body.remove))
     return {"message": "updated the thread"}
+
+
+class Threads(BaseModel):
+    ids: list[str]
+
+
+@router.post("/mail/trash")
+def trash_threads(body: Threads) -> dict:
+    """Move each thread to Trash; says how many failed, if any did."""
+    if not body.ids:
+        raise HTTPException(400, "pick threads to delete")
+
+    def one(id: str) -> str | None:
+        try:
+            gmail.trash(id)
+        except gmail.MailError as e:
+            log.warning("deleting mail thread %s failed: %s", id, e)
+            return str(e)
+        return None
+
+    with ThreadPoolExecutor(8) as pool:
+        errors = [e for e in pool.map(one, body.ids) if e]
+    done = len(body.ids) - len(errors)
+    if errors:
+        raise ActionFailed(f"moved {done} of {len(body.ids)} threads to Trash; {errors[0]}")
+    return {"message": f"moved {done} thread{'' if done == 1 else 's'} to Trash"}
+
+
+@router.post("/mail/{thread_id}/trash")
+def trash_thread(thread_id: str) -> dict:
+    mail_call("deleting the thread", lambda: gmail.trash(thread_id))
+    return {"message": "moved the thread to Trash"}
 
 
 class MailAction(BaseModel):

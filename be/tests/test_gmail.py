@@ -120,6 +120,17 @@ def test_modify(monkeypatch):
     assert json.loads(seen[1].data) == {"addLabelIds": [], "removeLabelIds": ["INBOX"]}
 
 
+def test_trash(monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        respond({google.TOKEN_URL: {"access_token": "at"}, f"{gmail.API}/threads/t1/trash": {"id": "t1"}}, seen),
+    )
+    gmail.trash("t1")
+    assert seen[1].get_method() == "POST" and seen[1].full_url == f"{gmail.API}/threads/t1/trash"
+
+
 def test_thread_markdown_and_save(isolated_config):
     thread = {
         "id": "t1",

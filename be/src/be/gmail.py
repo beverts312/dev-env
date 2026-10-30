@@ -105,6 +105,11 @@ def modify(id: str, add: list[str] = (), remove: list[str] = ()) -> None:
     google.post_json(f"{thread_url(id)}/modify", {"addLabelIds": list(add), "removeLabelIds": list(remove)}, NAME)
 
 
+def trash(id: str) -> None:
+    """Move the thread to Trash, which Gmail empties after 30 days."""
+    google.post_json(f"{thread_url(id)}/trash", {}, NAME)
+
+
 def text_of(html: str) -> str:
     """Rough plain text of an HTML body, for a message that has no text/plain part."""
     html = re.sub(r"(?is)<(script|style)\b.*?</\1>", "", html)

@@ -867,6 +867,22 @@ def test_mail(serve, monkeypatch):
     assert changed == [("t1", [], ["INBOX"])]
     assert c.post("/api/mail/t1/modify", json={}).status_code == 400
 
+    trashed = []
+    monkeypatch.setattr(gmail, "trash", trashed.append)
+    assert c.post("/api/mail/t1/trash").json() == {"message": "moved the thread to Trash"}
+    assert trashed == ["t1"]
+    assert c.post("/api/mail/trash", json={"ids": ["t2", "t3"]}).json() == {"message": "moved 2 threads to Trash"}
+    assert sorted(trashed) == ["t1", "t2", "t3"]
+    assert c.post("/api/mail/trash", json={"ids": []}).status_code == 400
+
+    def flaky(id):
+        if id == "bad":
+            raise gmail.MailError("HTTP 404 from Gmail")
+
+    monkeypatch.setattr(gmail, "trash", flaky)
+    resp = c.post("/api/mail/trash", json={"ids": ["ok", "bad"]})
+    assert resp.status_code == 422 and resp.json()["message"] == "moved 1 of 2 threads to Trash; HTTP 404 from Gmail"
+
 
 def test_mail_not_signed_in(serve):
     c, _, _, _ = serve

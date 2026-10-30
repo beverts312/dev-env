@@ -307,6 +307,8 @@ export const api = {
   mailActions: () => request<{ actions: MailAction[] }>('GET', '/mail/actions'),
   modifyMail: (id: string, labels: { add?: string[]; remove?: string[] }) =>
     request<Done>('POST', `/mail/${segment(id)}/modify`, labels),
+  trashMails: (ids: string[]) => request<Done>('POST', '/mail/trash', { ids }),
+  trashMail: (id: string) => request<Done>('POST', `/mail/${segment(id)}/trash`),
   mailAction: (id: string, ask: { action: string } | { prompt: string }) =>
     request<Done>('POST', `/mail/${segment(id)}/action`, ask),
   todos: (done = false) => request<TodosData>('GET', `/todos${done ? '?done=true' : ''}`),

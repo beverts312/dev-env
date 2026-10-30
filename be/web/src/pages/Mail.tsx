@@ -1,9 +1,10 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import { Archive, ExternalLink, MailOpen, RefreshCw, Sparkles } from 'lucide-react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { ExternalLink, MailOpen, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { SectionState } from '@/components/TableSection'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,8 +43,33 @@ export function Mail() {
   const [picked, setPicked] = useState<string | null>(null)
   const query = [q, READ[read]].filter(Boolean).join(' ')
   const list = useMail(query)
-  const archive = useAction((id: string) => api.modifyMail(id, { remove: ['INBOX'] }), [mailKey])
+  const trash = useAction(api.trashMail, [mailKey])
+  const trashAll = useAction(api.trashMails, [mailKey])
   const threads = list.data?.threads ?? []
+  // the threads checked for deleting; only those still listed count
+  const [checked, setChecked] = useState<Set<string>>(new Set())
+  const anchor = useRef<number | null>(null)
+  const ids = threads.filter((t) => checked.has(t.id)).map((t) => t.id)
+  const all = threads.length > 0 && ids.length === threads.length
+
+  // shift-click checks or unchecks the run from the last one clicked, as Gmail does
+  const check = (i: number, range: boolean) => {
+    const on = !checked.has(threads[i].id)
+    const from = range && anchor.current !== null ? Math.min(anchor.current, i) : i
+    const to = range && anchor.current !== null ? Math.max(anchor.current, i) : i
+    const next = new Set(checked)
+    threads.slice(from, to + 1).forEach((t) => (on ? next.add(t.id) : next.delete(t.id)))
+    setChecked(next)
+    anchor.current = i
+  }
+
+  const deleteChecked = () =>
+    trashAll.mutate([ids], {
+      onSuccess: () => {
+        if (picked && ids.includes(picked)) setPicked(null)
+        setChecked(new Set())
+      },
+    })
 
   const search = (e: FormEvent) => {
     e.preventDefault()
@@ -79,7 +105,13 @@ export function Mail() {
             <RefreshCw className={cn(list.isFetching && 'animate-spin')} />
           </Button>
         </header>
-        <div className="px-2 pb-2">
+        <div className="flex items-center gap-2 px-3 pb-2">
+          <Checkbox
+            aria-label="select all"
+            checked={all ? true : ids.length ? 'indeterminate' : false}
+            onCheckedChange={() => setChecked(all ? new Set() : new Set(threads.map((t) => t.id)))}
+            disabled={!threads.length}
+          />
           <ToggleGroup
             type="single"
             variant="outline"
@@ -94,6 +126,18 @@ export function Mail() {
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
+          {ids.length > 0 && (
+            <>
+              <span className="ml-auto text-xs text-muted-foreground">{ids.length} selected</span>
+              <Button size="xs" variant="ghost" onClick={() => setChecked(new Set())}>
+                clear
+              </Button>
+              <Button size="xs" variant="destructive" onClick={deleteChecked} disabled={trashAll.isPending}>
+                <Trash2 />
+                delete {ids.length}
+              </Button>
+            </>
+          )}
         </div>
         <div className="border-t">
           {!list.data || list.data.error || !threads.length ? (
@@ -104,13 +148,15 @@ export function Mail() {
             />
           ) : (
             <ul className="divide-y">
-              {threads.map((t) => (
+              {threads.map((t, i) => (
                 <ThreadRow
                   key={t.id}
                   thread={t}
                   picked={t.id === picked}
+                  checked={checked.has(t.id)}
+                  onCheck={(range) => check(i, range)}
                   onPick={() => setPicked(t.id)}
-                  onArchive={() => archive.mutate([t.id], { onSuccess: () => t.id === picked && setPicked(null) })}
+                  onDelete={() => trash.mutate([t.id], { onSuccess: () => t.id === picked && setPicked(null) })}
                 />
               ))}
             </ul>
@@ -118,7 +164,7 @@ export function Mail() {
         </div>
       </section>
       {picked ? (
-        <ThreadView id={picked} onArchived={() => setPicked(null)} />
+        <ThreadView id={picked} onDeleted={() => setPicked(null)} />
       ) : (
         <p className="p-4 text-sm text-muted-foreground">pick an email</p>
       )}
@@ -129,13 +175,17 @@ export function Mail() {
 function ThreadRow({
   thread,
   picked,
+  checked,
+  onCheck,
   onPick,
-  onArchive,
+  onDelete,
 }: {
   thread: MailThread
   picked: boolean
+  checked: boolean
+  onCheck: (range: boolean) => void
   onPick: () => void
-  onArchive: () => void
+  onDelete: () => void
 }) {
   const unread = thread.unread
   return (
@@ -147,8 +197,16 @@ function ThreadRow({
         // unread: a bar on the left edge and full-strength text; read: faded
         unread ? 'bg-primary/5 before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-primary' : 'text-muted-foreground',
         picked && 'bg-muted',
+        checked && 'bg-primary/10',
       )}
     >
+      <Checkbox
+        data-nav-pick
+        aria-label={`select ${thread.subject}`}
+        checked={checked}
+        onClick={(e) => onCheck(e.shiftKey)}
+        className="mt-0.5"
+      />
       <span
         aria-hidden
         className={cn('mt-1.5 size-2 shrink-0 rounded-full', unread ? 'bg-primary' : 'border border-muted-foreground/40')}
@@ -168,16 +226,16 @@ function ThreadRow({
         <div className="truncate text-xs text-muted-foreground">{thread.snippet}</div>
       </button>
       <div className="flex flex-col">
-        {thread.labels.includes('INBOX') && (
+        {!thread.labels.includes('TRASH') && (
           <Button
-            data-nav-action="archive"
+            data-nav-action="delete"
             variant="ghost"
             size="icon-sm"
-            aria-label={`archive ${thread.subject}`}
+            aria-label={`delete ${thread.subject}`}
             className={HOVER}
-            onClick={onArchive}
+            onClick={onDelete}
           >
-            <Archive />
+            <Trash2 />
           </Button>
         )}
         <ClaudeMenu id={thread.id}>
@@ -213,11 +271,11 @@ function ClaudeMenu({ id, children }: { id: string; children: ReactNode }) {
   )
 }
 
-function ThreadView({ id, onArchived }: { id: string; onArchived: () => void }) {
+function ThreadView({ id, onDeleted }: { id: string; onDeleted: () => void }) {
   const qc = useQueryClient()
   const thread = useMailThread(id)
   const [prompt, setPrompt] = useState('')
-  const archive = useAction(() => api.modifyMail(id, { remove: ['INBOX'] }), [mailKey])
+  const trash = useAction(() => api.trashMail(id), [mailKey])
   const unread = useAction(() => api.modifyMail(id, { add: ['UNREAD'] }), [mailKey])
   const run = useAction((ask: { action: string } | { prompt: string }) => api.mailAction(id, ask))
   const data = thread.data
@@ -241,9 +299,9 @@ function ThreadView({ id, onArchived }: { id: string; onArchived: () => void }) 
     <section aria-label="email" className="min-w-0 rounded-xl border bg-card text-card-foreground shadow-xs">
       <header className="flex flex-wrap items-center gap-1 p-2">
         <h2 className="mr-auto truncate px-1 text-sm font-semibold">{data?.subject ?? ''}</h2>
-        <Button variant="ghost" size="sm" onClick={() => archive.mutate([], { onSuccess: onArchived })}>
-          <Archive />
-          archive
+        <Button variant="ghost" size="sm" onClick={() => trash.mutate([], { onSuccess: onDeleted })}>
+          <Trash2 />
+          delete
         </Button>
         <Button variant="ghost" size="sm" onClick={() => unread.mutate([])}>
           <MailOpen />
