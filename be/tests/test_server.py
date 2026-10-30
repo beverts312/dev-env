@@ -241,6 +241,28 @@ def test_start_work(serve, tmp_path, monkeypatch):
     assert len(started) == 1
 
 
+def test_cloud_issue(serve, monkeypatch):
+    c, _, _, _ = serve
+    filed = []
+    monkeypatch.setattr(ws, "cloud_issue", lambda text, model=None, window=None: filed.append(text))
+    resp = c.post("/api/jira/cloud-issue", json={"text": "  rotate the NAT IP\n"})
+    assert resp.json() == {"message": "opened claude to file a cloud issue"}
+    assert filed == ["rotate the NAT IP"]
+    assert c.post("/api/jira/cloud-issue", json={"text": "  "}).status_code == 400
+    assert len(filed) == 1
+
+
+def test_cloud_issue_reports_failure(serve, monkeypatch):
+    c, _, _, _ = serve
+
+    def fail(text, model=None, window=None):
+        raise click.ClickException("cmux not found")
+
+    monkeypatch.setattr(ws, "cloud_issue", fail)
+    resp = c.post("/api/jira/cloud-issue", json={"text": "x"})
+    assert resp.status_code == 422 and "cmux not found" in resp.json()["message"]
+
+
 def test_review(serve):
     c, _, reviews, parent = serve
     resp = c.post("/api/prs/review", json={"repo": "acme/api", "number": 7})

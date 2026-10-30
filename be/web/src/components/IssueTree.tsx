@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
-import { ChevronRight, FolderOpen, FolderPlus, Play } from 'lucide-react'
+import { ChevronRight, FolderOpen, FolderPlus, Play, Plus } from 'lucide-react'
 
+import { CloudIssueDialog } from '@/components/CloudIssueDialog'
 import { MultiFilter } from '@/components/MultiFilter'
 import { SectionState, TableSection } from '@/components/TableSection'
 import { WorkspaceDialog } from '@/components/WorkspaceDialog'
@@ -21,13 +22,14 @@ const STATUS_STYLES: Record<string, string> = {
 
 // The Jira issues assigned to you, as `jira ls` nests them. Opening an issue opens its workspace,
 // or offers to create one or link one. Your To Do issues with a workspace can also start work: a new pane there
-// running claude in plan mode on the issue
+// running claude in plan mode on the issue. New cloud issue asks for a description and runs claude's /cloud-issue on it
 export function IssueTree() {
   const data = useTable('jira')
   const spaces = useTable('workspaces')
   const [picks, setPicks] = useTreePicks()
   const [closed, setClosed] = usePersistent<string[]>('be.tree.closed', [])
   const [creating, setCreating] = useState<Issue | null>(null)
+  const [filing, setFiling] = useState(false)
   const open = useAction(api.openWorkspace)
   const start = useAction(api.startWork)
 
@@ -73,6 +75,12 @@ export function IssueTree() {
       hidden={total - count}
       onRefresh={data.refresh}
       refreshing={data.refreshing}
+      actions={
+        <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => setFiling(true)}>
+          <Plus />
+          new cloud issue
+        </Button>
+      }
       toolbar={toolbar}
     >
       {!issues || !issues.length ? (
@@ -104,6 +112,7 @@ export function IssueTree() {
           onClose={() => setCreating(null)}
         />
       )}
+      {filing && <CloudIssueDialog onClose={() => setFiling(false)} />}
     </TableSection>
   )
 }

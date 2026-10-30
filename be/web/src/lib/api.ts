@@ -235,6 +235,7 @@ export const api = {
     request<Done>('POST', `/workspaces/${segment(name)}/link`, { key }),
   startWork: (name: string, key: string) =>
     request<Done>('POST', `/workspaces/${segment(name)}/start`, { key }),
+  cloudIssue: (text: string) => request<Done>('POST', '/jira/cloud-issue', { text }),
   config: () => request<ConfigData>('GET', '/config'),
   setConfig: (key: string, value: string, name = '') =>
     request<Done>('PUT', `/config/${segment(key)}`, { value, name }),

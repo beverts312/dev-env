@@ -334,6 +334,30 @@ def start_work(name: str, body: Link, request: Request) -> dict:
     return {"message": f"started {key} in {name}"}
 
 
+class CloudIssue(BaseModel):
+    text: str
+
+
+@router.post("/jira/cloud-issue")
+def cloud_issue(body: CloudIssue, request: Request) -> dict:
+    """Open a cmux workspace running claude's /cloud-issue on the text."""
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(400, "describe the issue")
+    with state(request).lock:
+        try:
+            window, _ = config.resolve("cmux.window")
+            ws.cloud_issue(text, window=window)
+        except click.ClickException as e:
+            log.warning("opening /cloud-issue failed: %s", e.format_message())
+            raise ActionFailed(f"cloud issue: {e.format_message()}") from e
+        except click.exceptions.Exit as e:
+            log.warning("opening /cloud-issue failed: cmux could not open a workspace")
+            raise ActionFailed("cloud issue: cmux could not open a workspace") from e
+    log.info("opened /cloud-issue")
+    return {"message": "opened claude to file a cloud issue"}
+
+
 def todo_row(t: dict) -> dict:
     """t with its Jira issue's link, or "" when it has none or jira.url isn't set."""
     url = ""

@@ -315,6 +315,30 @@ def start_work(root: Path, key: str, model: str | None = None, window: str | Non
     cmux.new_pane(binary, *found, f"cd {shlex.quote(str(root))} && {command}")
 
 
+def cloud_issue(text: str, model: str | None = None, window: str | None = None) -> None:
+    """Open a cmux workspace running claude's /cloud-issue on text, in ws.dir or home."""
+    if not model:
+        model, _ = config.resolve("claude.model")
+    parent, _ = config.resolve("ws.dir")
+    cwd = Path(parent).expanduser() if parent else Path.home()
+    binary = cmux.start()
+    command = claude_command([], model or "", [shlex.quote(f"/cloud-issue {text}")])
+    cmux.new_workspace(
+        binary,
+        [
+            "--name",
+            "cloud issue",
+            "--cwd",
+            str(cwd),
+            "--focus",
+            "true",
+            "--command",
+            command,
+            *window_args(target_window(binary, window)),
+        ],
+    )
+
+
 MANIFEST = "workspace.yml"
 
 

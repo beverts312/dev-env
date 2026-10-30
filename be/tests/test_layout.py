@@ -117,3 +117,30 @@ def test_start_work_needs_the_open_workspace(tmp_path, monkeypatch):
     monkeypatch.setattr(cmux, "find_workspace", lambda binary, title: None)
     with pytest.raises(click.ClickException, match="could not find"):
         ws.start_work(tmp_path, "ACME-12", "opus")
+
+
+def test_cloud_issue_opens_claude_in_ws_dir(tmp_path, monkeypatch):
+    from be import cmux, config
+
+    config.set_value("ws.dir", str(tmp_path))
+    created = []
+    monkeypatch.setattr(cmux, "start", lambda: "cmux")
+    monkeypatch.setattr(cmux, "new_workspace", lambda binary, args: created.append((binary, args)))
+    ws.cloud_issue("rotate the NAT gateway's IP", "opus", "w1")
+    assert created == [
+        (
+            "cmux",
+            ["--name", "cloud issue", "--cwd", str(tmp_path), "--focus", "true", "--command",
+             "claude --model opus '/cloud-issue rotate the NAT gateway'\"'\"'s IP'", "--window", "w1"],
+        )
+    ]
+
+
+def test_cloud_issue_defaults_to_home(monkeypatch):
+    from be import cmux
+
+    created = []
+    monkeypatch.setattr(cmux, "start", lambda: "cmux")
+    monkeypatch.setattr(cmux, "new_workspace", lambda binary, args: created.append(args))
+    ws.cloud_issue("x", "opus", "w1")
+    assert created[0][3] == str(Path.home())

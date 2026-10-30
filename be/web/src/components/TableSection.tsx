@@ -8,7 +8,7 @@ import { usePersistent } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
 // A titled card holding one table, with its collapse toggle (remembered, else defaultCollapsed), shown and hidden
-// counts, refresh button, and filters. The keyboard moves between the rows of a page's sections.
+// counts, actions and refresh button, and filters. The keyboard moves between the rows of a page's sections.
 export function TableSection({
   id,
   title,
@@ -16,6 +16,7 @@ export function TableSection({
   hidden = 0,
   onRefresh,
   refreshing = false,
+  actions,
   toolbar,
   defaultCollapsed = false,
   children,
@@ -26,6 +27,7 @@ export function TableSection({
   hidden?: number
   onRefresh?: () => void
   refreshing?: boolean
+  actions?: ReactNode
   toolbar?: ReactNode
   defaultCollapsed?: boolean
   children: ReactNode
@@ -52,17 +54,16 @@ export function TableSection({
         <h2 className="text-sm font-semibold">{title}</h2>
         {shown !== undefined && <Badge variant="secondary">{shown}</Badge>}
         {hidden > 0 && <span className="text-xs text-muted-foreground">{hidden} hidden</span>}
-        {onRefresh && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto text-muted-foreground"
-            onClick={onRefresh}
-            disabled={refreshing}
-          >
-            <RefreshCw className={cn(refreshing && 'animate-spin')} />
-            refresh
-          </Button>
+        {(actions || onRefresh) && (
+          <div className="ml-auto flex items-center gap-1">
+            {actions}
+            {onRefresh && (
+              <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={onRefresh} disabled={refreshing}>
+                <RefreshCw className={cn(refreshing && 'animate-spin')} />
+                refresh
+              </Button>
+            )}
+          </div>
         )}
       </header>
       {!collapsed && (
