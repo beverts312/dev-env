@@ -13,9 +13,10 @@ from pathlib import Path
 
 import click
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from be import claude_sessions, claude_usage, config, cursor_usage, gcal, github, gmail, jira, todo
+from be import claude_sessions, claude_usage, config, cursor_usage, gcal, github, gmail, jira, skill_pages, todo
 from be.commands import pr, ws
 from be.server import views
 from be.server.views import MINE_BUTTONS, SettingError
@@ -46,6 +47,8 @@ class State:
     # each PR table is fetched only when refreshed, then kept
     loaded: dict[str, list[dict] | str] = field(default_factory=dict)
     lock: threading.RLock = field(default_factory=threading.RLock)
+    # each skill page's latest run
+    runs: dict[str, skill_pages.Run] = field(default_factory=dict)
 
     def setting(self, key: str, given):
         """given if its flag was, else the setting as it's set now."""
@@ -108,12 +111,19 @@ def find_workspace(name: str):
 
 @router.get("/meta")
 def meta(request: Request) -> dict:
-    """The reviews page's starting agent, the agents it offers, and where the config is saved."""
+    """The reviews page's starting agent, the agents it offers, where the config is saved, and the
+    skill pages."""
     s = state(request)
+    try:
+        pages = [{"name": p["name"], "icon": p["icon"]} for p in skill_pages.pages().values()]
+    except click.ClickException as e:
+        log.warning("reading the pages setting failed: %s", e.format_message())
+        pages = []
     return {
         "agent": s.review_agent(None),
         "agents": list(pr.AGENTS),
         "config_path": str(config.config_path()),
+        "pages": pages,
     }
 
 
@@ -739,3 +749,57 @@ def set_config(key: str, body: Value, request: Request) -> dict:
 @router.delete("/config/{key}")
 def unset_config(key: str, request: Request) -> dict:
     return saved(request, key, "", "", unset=True)
+
+
+def skill_page(name: str) -> dict:
+    try:
+        found = skill_pages.pages().get(name)
+    except click.ClickException as e:
+        raise ActionFailed(e.format_message()) from e
+    if found is None:
+        raise HTTPException(404, f"no page {name}")
+    return found
+
+
+@router.get("/pages/{name}")
+def get_skill_page(name: str, request: Request) -> dict:
+    """The page's settings, the newest file its output matches, how its last refresh went, and the
+    claude.ai artifacts it published."""
+    page = skill_page(name)
+    s = state(request)
+    with s.lock:
+        run = s.runs.get(name)
+    file = skill_pages.latest(page["output"])
+    return {
+        **{k: page[k] for k in ("name", "skill", "icon", "output", "cwd")},
+        "file": str(file) if file else None,
+        "updated_at": file.stat().st_mtime if file else None,
+        **skill_pages.status(run),
+        # read from the log, so they outlast a restart
+        "links": skill_pages.read_log(skill_pages.page_dir(name) / "last-run.log")["links"],
+    }
+
+
+@router.get("/pages/{name}/content")
+def skill_page_content(name: str):
+    file = skill_pages.latest(skill_page(name)["output"])
+    if file is None:
+        raise HTTPException(404, f"{name} has no output yet")
+    return FileResponse(file, headers={"Cache-Control": "no-cache"})
+
+
+@router.post("/pages/{name}/refresh")
+def refresh_skill_page(name: str, request: Request) -> dict:
+    """Rerun the page's skill in the background; the page polls until it's done."""
+    page = skill_page(name)
+    s = state(request)
+    with s.lock:
+        if skill_pages.status(s.runs.get(name))["running"]:
+            raise ActionFailed(f"{name} is already refreshing")
+        model, _ = config.resolve("claude.model")
+        try:
+            s.runs[name] = skill_pages.start(page, model)
+        except click.ClickException as e:
+            log.warning("refreshing %s failed: %s", name, e.format_message())
+            raise ActionFailed(f"{name}: {e.format_message()}") from e
+    return {"message": f"refreshing {name} with /{page['skill']}"}

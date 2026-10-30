@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react'
-import { Keyboard, Moon, NotebookPen, Settings2, Sun } from 'lucide-react'
+import { Keyboard, Moon, NotebookPen, Settings2, Sun, type LucideIcon } from 'lucide-react'
+import { DynamicIcon, iconNames, type IconName } from 'lucide-react/dynamic'
 import { useTheme } from 'next-themes'
 import { NavLink, Outlet, useLocation } from 'react-router'
 
@@ -23,7 +24,7 @@ import {
   SidebarRail,
   SidebarTrigger,
 } from '@/components/ui/sidebar'
-import { useAction, useTable } from '@/hooks/queries'
+import { useAction, useMeta, useTable } from '@/hooks/queries'
 import { useKeyboardNav } from '@/hooks/useKeyboardNav'
 import { api, type PrTableId } from '@/lib/api'
 import { countTree, filterTree, prShown, usePrFilters, useTreePicks } from '@/lib/filters'
@@ -36,7 +37,12 @@ export function Layout() {
   const [help, setHelp] = useState(false)
   const { pathname } = useLocation()
   useKeyboardNav(useCallback(() => setHelp(true), []))
-  const page = PAGES.find((p) => p.path === pathname)
+  const skillPages = (useMeta().data?.pages ?? []).map((p) => ({
+    path: `/p/${encodeURIComponent(p.name)}`,
+    label: p.name,
+    icon: p.icon,
+  }))
+  const page = [...PAGES, ...skillPages].find((p) => p.path === pathname)
   const notes = useAction(api.openNotes)
   const configs = useAction(api.openConfigs)
 
@@ -56,6 +62,9 @@ export function Layout() {
             <SidebarGroupContent>
               <SidebarMenu>
                 {PAGES.filter((p) => p.path !== '/' && p.tables.length).map((p) => (
+                  <NavItem key={p.path} page={p} active={pathname === p.path} />
+                ))}
+                {skillPages.map((p) => (
                   <NavItem key={p.path} page={p} active={pathname === p.path} />
                 ))}
               </SidebarMenu>
@@ -92,11 +101,18 @@ export function Layout() {
             <ThemeToggle />
           </div>
         </header>
-        {/* home is wider, for its calendar pane; mail is full width, its list against the sidebar */}
+        {/* home is wider, for its calendar pane; mail is full width, its list against the sidebar, and
+            skill pages are too, for their reports */}
         <div
           className={cn(
             'mx-auto w-full space-y-4 p-4',
-            pathname === '/' ? 'max-w-[96rem]' : pathname === '/mail' ? 'max-w-none pl-0' : 'max-w-7xl',
+            pathname === '/'
+              ? 'max-w-[96rem]'
+              : pathname === '/mail'
+                ? 'max-w-none pl-0'
+                : pathname.startsWith('/p/')
+                  ? 'max-w-none'
+                  : 'max-w-7xl',
           )}
         >
           <Outlet />
@@ -123,17 +139,20 @@ export function Layout() {
   )
 }
 
-function NavItem({ page, active }: { page: (typeof PAGES)[number]; active: boolean }) {
+// a skill page's icon is a lucide name, loaded when first drawn
+type NavPage = { path: string; label: string; icon: LucideIcon | string; tables?: CountId[] }
+
+function NavItem({ page, active }: { page: NavPage; active: boolean }) {
   const Icon = page.icon
   return (
     <SidebarMenuItem>
       <SidebarMenuButton asChild isActive={active} tooltip={page.label}>
         <NavLink to={page.path}>
-          <Icon />
+          {typeof Icon === 'string' ? <SkillIcon name={Icon} /> : <Icon />}
           <span>{page.label}</span>
         </NavLink>
       </SidebarMenuButton>
-      {page.tables.length > 0 && <PageCount tables={page.tables} />}
+      {!!page.tables?.length && <PageCount tables={page.tables} />}
     </SidebarMenuItem>
   )
 }
@@ -164,6 +183,11 @@ function useShownCount(tables: CountId[]) {
     workspaces: () => workspaces?.length ?? 0,
   }
   return tables.reduce((n, t) => n + counts[t](), 0)
+}
+
+// an unknown name gets file-text
+function SkillIcon({ name }: { name: string }) {
+  return <DynamicIcon name={(iconNames as string[]).includes(name) ? (name as IconName) : 'file-text'} />
 }
 
 function ThemeToggle() {

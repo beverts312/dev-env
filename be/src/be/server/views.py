@@ -196,7 +196,7 @@ def flag_note(key: str) -> str:
 
 
 def config_settings(fixed: tuple[str, ...]) -> list[dict]:
-    """Every setting with its file value (a map's as entries), source, and any notes on what overrides it."""
+    """Every setting with its file value (a map's or tables' as entries), source, and any notes on what overrides it."""
     data = config.load_file()
     out = []
     for s in config.SETTINGS.values():
@@ -218,6 +218,12 @@ def config_settings(fixed: tuple[str, ...]) -> list[dict]:
         }
         if s.kind == "map":
             row["entries"] = {str(k): str(v) for k, v in file.items()} if isinstance(file, dict) else {}
+        elif s.kind == "tables":
+            row["fields"] = list(s.fields)
+            tables = file if isinstance(file, dict) else {}
+            row["entries"] = {
+                str(k): {str(f): str(v) for f, v in t.items()} for k, t in tables.items() if isinstance(t, dict)
+            }
         else:
             row["value"] = "" if file is None else str(file)
         out.append(row)

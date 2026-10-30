@@ -86,6 +86,27 @@ export type Meta = {
   agent: string
   agents: string[]
   config_path: string
+  // the pages setting's pages, each showing what its skill last wrote
+  pages: { name: string; icon: string }[]
+}
+
+// A page showing the newest file its skill wrote, and how the skill's last run went
+export type SkillPage = {
+  name: string
+  skill: string
+  icon: string
+  output: string
+  cwd: string
+  // the newest file output matches, and its mtime in seconds; null before the skill writes one
+  file: string | null
+  updated_at: number | null
+  running: boolean
+  started_at: number | null
+  exit_code: number | null
+  // the end of a failed run's log
+  error: string | null
+  // the claude.ai artifacts the last run published
+  links: string[]
 }
 
 export type Setting = {
@@ -99,7 +120,10 @@ export type Setting = {
   source: string
   notes: string[]
   value?: string
-  entries?: Record<string, string>
+  // a map's entries; a tables setting's tables, each name to its fields
+  entries?: Record<string, string> | Record<string, Record<string, string>>
+  // the fields a tables setting's tables take
+  fields?: string[]
 }
 
 export type ConfigData = { path: string; settings: Setting[]; error: string | null }
@@ -317,6 +341,12 @@ export const api = {
   doneTodo: (id: string) => request<TodoDone>('POST', `/todos/${segment(id)}/done`),
   reopenTodo: (id: string) => request<TodoDone>('POST', `/todos/${segment(id)}/reopen`),
   deleteTodo: (id: string) => request<Done>('DELETE', `/todos/${segment(id)}`),
+  skillPage: (name: string) => request<SkillPage>('GET', `/pages/${segment(name)}`),
+  refreshSkillPage: (name: string) => request<Done>('POST', `/pages/${segment(name)}/refresh`),
 }
+
+// the newest file a skill page's skill wrote, served as is; v busts the cache when it changes
+export const skillPageContent = (name: string, v: number | null) =>
+  `/api/pages/${segment(name)}/content?v=${v ?? 0}`
 
 export const prName = (p: Pr) => `${p.repo}#${p.number}`

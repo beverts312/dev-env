@@ -256,6 +256,7 @@ OPS = "Operations"
 | `jira.email`            | `JIRA_EMAIL`            | `ws create`, `jira ls`, `server`                      | Atlassian account email for the Jira API                                                           | none                                                                        |
 | `jira.token`            | `JIRA_API_TOKEN`        | `ws create`, `jira ls`, `server`                      | Atlassian API token for the Jira API. Masked in `be config list`                                   | none                                                                        |
 | `jira.projects`         | `JIRA_PROJECTS`         | `ws create`                                           | Map of Jira project key to description. The env var is a JSON object, e.g. `{"OPS": "Operations"}` | none                                                                        |
+| `pages`                 | `BE_PAGES`              | `server`                                              | Skill pages: a table per page, see [Skill pages](#skill-pages). The env var is a JSON object, e.g. `{"finops": {"skill": "gcp-spend-anomaly-analyzer", "output": "~/reports/*.html"}}` | none |
 | –                       | `BE_CONFIG`             | everything                                            | Path to the config file                                                                            | `~/.be/config`                                                              |
 
 Running `be` outside cmux (e.g. from iTerm) needs cmux to accept outside
@@ -282,10 +283,34 @@ Map settings such as `jira.projects` are edited one entry at a time:
 `be config set jira.projects.OPS "Operations"`, `be config unset jira.projects.OPS`.
 `be config get jira.projects` prints every entry as `KEY<tab>description`.
 
-The settings can also be edited in the browser on `be server`'s config page (`/config`).
+Tables settings such as `pages` are edited one field at a time:
+`be config set pages.finops.skill gcp-spend-anomaly-analyzer`, `be config unset pages.finops` (the whole page).
+
+The settings can also be edited in the browser on `be server`'s config page (`/config`), except `pages`,
+which it only lists.
 
 `set` and `unset` rewrite the file, which drops any comments in it. So does saving on the config page. Use
 `be config edit` if you want to keep hand-written comments.
+
+### Skill pages
+
+Each table under `pages` adds a sidebar page to `be server`, at `/p/<name>`, showing the newest file a
+Claude skill wrote. Its refresh button runs `claude -p "/<skill> <prompt>" --model <claude.model>` in the
+background, logging its stream-json output to `~/.be/pages/<name>/last-run.log`; the page polls while it runs
+and reloads the file when it's done, or shows why it failed (its final result, else the end of the log). The
+page also links any claude.ai artifacts the last run published, found in that log.
+
+```toml
+[pages.finops]
+skill = "gcp-spend-anomaly-analyzer"   # required
+output = "~/reports/gcp-spend-*.html"  # required: a glob; the newest match is shown
+icon = "circle-dollar-sign"            # a lucide icon name; default file-text
+prompt = "last 7 days"                 # more for the skill, after /<skill>
+cwd = "~/notes/finops"                 # where claude runs; default ~/.be/pages/<name>
+```
+
+The run can't answer permission prompts, so it can only use what your Claude settings allow (`~/.claude/settings.json`,
+plus `cwd`'s `.claude/settings.json`); publishing an artifact needs the Artifact tool allowed there. The file shows in a sandboxed frame: its scripts run, but can't call `be server`'s API.
 
 ### Jira
 

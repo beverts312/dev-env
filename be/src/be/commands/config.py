@@ -30,6 +30,14 @@ def template() -> str:
         # only env values are written live; built-in defaults stay commented
         # so the file doesn't pin them
         value = config.env_value(s) if os.environ.get(s.env) else None
+        if s.kind == "tables":
+            lines += ["", f"# {s.help} (env: {s.env}, as JSON)"]
+            if value:
+                lines.append(tomli_w.dumps({s.key: value}).strip())
+            else:
+                lines += [f"# [{s.key}.NAME]", *(f'# {field} = ""' for field in s.fields)]
+            section = s.key
+            continue
         if s.kind == "map":
             lines += ["", f"[{s.key}]", f"# {s.help} (env: {s.env}, as JSON)"]
             lines.append(tomli_w.dumps(value).strip() if value else '# KEY = "description"')
@@ -52,6 +60,15 @@ def path() -> None:
     click.echo(config.config_path())
 
 
+def flatten(key: str, value):
+    """(key, value) for each string in value, keyed by its path under key."""
+    if not isinstance(value, dict):
+        yield key, value
+        return
+    for name, v in value.items():
+        yield from flatten(f"{key}.{name}", v)
+
+
 @config_group.command(name="list")
 def list_() -> None:
     """Show every setting, its effective value, and where it came from."""
@@ -60,10 +77,8 @@ def list_() -> None:
         value, source = config.resolve(key)
         if config.SETTINGS[key].secret and value is not None:
             value = "********"
-        if isinstance(value, dict):
-            rows += [(f"{key}.{name}", v, source) for name, v in value.items()] or [(key, None, "unset")]
-        else:
-            rows.append((key, value, source))
+        entries = list(flatten(key, value)) if isinstance(value, dict) else [(key, value)]
+        rows += [(k, v, source) for k, v in entries] or [(key, None, "unset")]
     width = max(len(key) for key, _, _ in rows)
     for key, value, source in rows:
         shown = "" if value is None else value
@@ -78,7 +93,10 @@ def get(key: str, source: bool) -> None:
     value, origin = config.resolve(key)
     if value is None or value == {}:
         raise click.exceptions.Exit(1)
-    lines = [f"{name}\t{v}" for name, v in value.items()] if isinstance(value, dict) else [value]
+    if isinstance(value, dict):
+        lines = [f"{k[len(key) + 1 :]}\t{v}" for k, v in flatten(key, value)]
+    else:
+        lines = [value]
     for line in lines:
         click.echo(f"{line}\t{origin}" if source else line)
 

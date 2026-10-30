@@ -153,3 +153,15 @@ export function useMailThread(id: string | null) {
 export function useMailActions() {
   return useQuery({ queryKey: [...mailKey, 'actions'], queryFn: api.mailActions, staleTime: Infinity })
 }
+
+export const skillPageKey = (name: string) => ['skill-page', name] as const
+// how often a skill page is reread while its skill runs
+const SKILL_RUN_EVERY = 3_000
+
+export function useSkillPage(name: string) {
+  return useQuery({
+    queryKey: skillPageKey(name),
+    queryFn: () => api.skillPage(name),
+    refetchInterval: (q) => (q.state.data?.running ? SKILL_RUN_EVERY : false),
+  })
+}

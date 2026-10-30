@@ -198,3 +198,34 @@ def test_set_value_and_unset_value(isolated_config, monkeypatch):
 def test_choices():
     assert config.SETTINGS["interactive"].choices == ("true", "false")
     assert config.SETTINGS["server.log_level"].choices == ("debug", "info", "warning", "error")
+
+
+def test_tables_fields(isolated_config):
+    assert run("config", "set", "pages.finops.skill", "gcp-spend").exit_code == 0
+    assert run("config", "set", "pages.finops.output", "~/r/*.html").exit_code == 0
+    assert tomllib.loads(isolated_config.read_text()) == {
+        "pages": {"finops": {"skill": "gcp-spend", "output": "~/r/*.html"}}
+    }
+    assert run("config", "get", "pages.finops.skill").output == "gcp-spend\n"
+    assert run("config", "get", "pages.finops").output == "skill\tgcp-spend\noutput\t~/r/*.html\n"
+    assert run("config", "get", "pages").output == "finops.skill\tgcp-spend\nfinops.output\t~/r/*.html\n"
+    assert "pages.finops.output" in run("config", "list").output
+    assert run("config", "unset", "pages.finops.output").exit_code == 0
+    assert run("config", "unset", "pages.finops").exit_code == 0
+    assert tomllib.loads(isolated_config.read_text()) == {}
+
+
+def test_tables_rejects_bad_keys():
+    assert run("config", "set", "pages.finops.nope", "x").exit_code == 2
+    assert run("config", "set", "pages.finops", "x").exit_code == 2
+    assert run("config", "set", "pages", "x").exit_code == 2
+    assert run("config", "set", "pages.a.b.skill", "x").exit_code == 2
+
+
+def test_tables_env_json(isolated_config):
+    env = {"BE_PAGES": '{"finops": {"skill": "s"}}'}
+    got = run("config", "get", "pages.finops.skill", "--source", env=env)
+    assert got.output == "s\tenv:BE_PAGES\n"
+    assert run("config", "init", env=env).exit_code == 0
+    assert tomllib.loads(isolated_config.read_text())["pages"] == {"finops": {"skill": "s"}}
+    assert run("config", "get", "pages", env={"BE_PAGES": '{"finops": "s"}'}).exit_code == 1

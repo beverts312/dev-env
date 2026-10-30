@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 import be.server
-from be import claude_sessions, cmux, config, jira
+from be import claude_sessions, cmux, config, jira, skill_pages
 from be.commands import pr, ws
 from be.server import api, app, views
 
@@ -908,3 +908,68 @@ def test_mail_action(serve, monkeypatch, tmp_path):
     ]
     assert c.post("/api/mail/t1/action", json={"action": "nope"}).status_code == 400
     assert c.post("/api/mail/t1/action", json={"prompt": " "}).status_code == 400
+
+
+@pytest.fixture
+def finops(tmp_path, monkeypatch):
+    monkeypatch.setattr(skill_pages, "PAGES_DIR", tmp_path / "pages")
+    config.set_value("pages.finops.skill", "gcp-spend")
+    config.set_value("pages.finops.output", str(tmp_path / "out" / "*.html"))
+    config.set_value("pages.finops.icon", "circle-dollar-sign")
+    procs = []
+
+    class Proc:
+        def __init__(self, cmd, **kw):
+            self.cmd, self.code = cmd, None
+            procs.append(self)
+
+        def poll(self):
+            return self.code
+
+    monkeypatch.setattr(skill_pages.subprocess, "Popen", Proc)
+    return tmp_path, procs
+
+
+def test_meta_lists_pages(serve, finops):
+    assert serve[0].get("/api/meta").json()["pages"] == [{"name": "finops", "icon": "circle-dollar-sign"}]
+
+
+def test_skill_page(serve, finops):
+    c = serve[0]
+    tmp, _ = finops
+    assert c.get("/api/pages/nope").status_code == 404
+    got = c.get("/api/pages/finops").json()
+    assert got["file"] is None and got["running"] is False and got["skill"] == "gcp-spend"
+    assert c.get("/api/pages/finops/content").status_code == 404
+    (tmp / "out").mkdir()
+    old, new = tmp / "out" / "a.html", tmp / "out" / "b.html"
+    old.write_text("<p>old</p>")
+    new.write_text("<p>new</p>")
+    os.utime(old, (1, 1))
+    got = c.get("/api/pages/finops").json()
+    assert got["file"] == str(new) and got["updated_at"] == new.stat().st_mtime
+    resp = c.get("/api/pages/finops/content")
+    assert resp.text == "<p>new</p>" and resp.headers["cache-control"] == "no-cache"
+
+
+def test_refresh_skill_page(serve, finops):
+    c = serve[0]
+    _, procs = finops
+    resp = c.post("/api/pages/finops/refresh")
+    assert resp.status_code == 200 and resp.json()["message"] == "refreshing finops with /gcp-spend"
+    assert procs[0].cmd[:3] == ["claude", "-p", "/gcp-spend"]
+    assert c.get("/api/pages/finops").json()["running"] is True
+    again = c.post("/api/pages/finops/refresh")
+    assert again.status_code == 422 and "already refreshing" in again.json()["message"]
+    procs[0].code = 0
+    assert c.get("/api/pages/finops").json()["running"] is False
+    assert c.post("/api/pages/finops/refresh").status_code == 200 and len(procs) == 2
+
+
+
+def test_skill_page_links(serve, finops):
+    tmp, _ = finops
+    log = tmp / "pages" / "finops" / "last-run.log"
+    log.parent.mkdir(parents=True)
+    log.write_text('{"type": "result", "result": "see https://claude.ai/artifact/abc-123", "is_error": false}\n')
+    assert serve[0].get("/api/pages/finops").json()["links"] == ["https://claude.ai/artifact/abc-123"]

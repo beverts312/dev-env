@@ -29,7 +29,13 @@ export function Config() {
       ) : (
         <div className="divide-y rounded-xl border bg-card">
           {data.settings.map((s) =>
-            s.kind === 'map' ? <MapSetting key={s.key} setting={s} /> : <SettingRow key={`${s.key}=${s.value}`} setting={s} />,
+            s.kind === 'map' ? (
+              <MapSetting key={s.key} setting={s} />
+            ) : s.kind === 'tables' ? (
+              <TablesSetting key={s.key} setting={s} />
+            ) : (
+              <SettingRow key={`${s.key}=${s.value}`} setting={s} />
+            ),
           )}
         </div>
       )}
@@ -91,8 +97,36 @@ function SettingRow({ setting }: { setting: Setting }) {
   )
 }
 
+// a table of tables, shown but not edited here: set its fields with `be config set`
+function TablesSetting({ setting }: { setting: Setting }) {
+  const tables = Object.entries((setting.entries ?? {}) as Record<string, Record<string, string>>)
+  return (
+    <Row setting={setting}>
+      {tables.map(([name, fields]) => (
+        <div key={name} className="rounded-md border p-2 text-xs">
+          <div className="font-mono font-medium">{name}</div>
+          <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+            {Object.entries(fields).map(([field, v]) => (
+              <div key={field} className="contents">
+                <dt className="text-muted-foreground">{field}</dt>
+                <dd className="truncate font-mono">{v}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      ))}
+      <p className="text-xs text-muted-foreground">
+        {tables.length ? '' : 'none in the file. '}Set with{' '}
+        <code className="rounded bg-muted px-1 py-0.5">
+          be config set {setting.key}.&lt;name&gt;.&lt;{(setting.fields ?? []).join('|')}&gt; …
+        </code>
+      </p>
+    </Row>
+  )
+}
+
 function MapSetting({ setting }: { setting: Setting }) {
-  const entries = Object.entries(setting.entries ?? {})
+  const entries = Object.entries((setting.entries ?? {}) as Record<string, string>)
   const [name, setName] = useState('')
   const [value, setValue] = useState('')
   const add = useAction(api.setConfig, CHANGES)

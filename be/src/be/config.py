@@ -24,12 +24,15 @@ class Setting:
     env: str
     help: str
     default: str | None = None
-    # "map" is a table of strings: set entries as <key>.<name>, env var is JSON
+    # "map" is a table of strings: set entries as <key>.<name>, env var is JSON;
+    # "tables" is a table of tables of fields: set them as <key>.<name>.<field>, env var is JSON
     kind: str = "str"
     # masked in `be config list`
     secret: bool = False
     # the only values it takes, if limited; `be server`'s config page offers them in a dropdown
     choices: tuple[str, ...] = ()
+    # the fields each of a "tables" setting's tables takes
+    fields: tuple[str, ...] = ()
 
 
 SETTINGS = {
@@ -98,17 +101,44 @@ SETTINGS = {
             secret=True,
         ),
         Setting("calendar.id", "BE_CALENDAR_ID", "Google calendar the home page shows", "primary"),
+        # last, as `be config init` writes its tables after the plain settings
+        Setting(
+            "pages",
+            "BE_PAGES",
+            "`be server` pages showing a skill's HTML output: skill, output (a glob for the file it writes), "
+            "icon (a lucide name), prompt (more for the skill), cwd (where claude runs it)",
+            kind="tables",
+            fields=("skill", "output", "icon", "prompt", "cwd"),
+        ),
     )
 }
 
 
+def valid_key(s: Setting) -> str:
+    if s.kind == "map":
+        return f"{s.key}.<name>"
+    if s.kind == "tables":
+        return f"{s.key}.<name>.<{'|'.join(s.fields)}>"
+    return s.key
+
+
 def setting(key: str) -> Setting:
-    """The setting for KEY, or for the map setting KEY is an entry of."""
+    """The setting for KEY, or for the map setting KEY is an entry of, or the tables setting KEY is
+    a table or field of."""
     s = SETTINGS.get(key)
     if s is None:
-        s = SETTINGS.get(key.rpartition(".")[0])
-        if s is None or s.kind != "map":
-            valid = ", ".join(f"{k}.<name>" if v.kind == "map" else k for k, v in SETTINGS.items())
+        *parents, field = key.split(".")
+        parent = SETTINGS.get(".".join(parents))
+        grandparent = SETTINGS.get(".".join(parents[:-1]))
+        if parent is not None and parent.kind in ("map", "tables"):
+            s = parent
+        elif parent is None and grandparent is not None and grandparent.kind == "tables":
+            if field not in grandparent.fields:
+                fields = ", ".join(grandparent.fields)
+                raise click.BadParameter(f"unknown field {field!r}; {grandparent.key} takes {fields}")
+            s = grandparent
+        else:
+            valid = ", ".join(valid_key(v) for v in SETTINGS.values())
             raise click.BadParameter(f"unknown key {key!r}; valid keys: {valid}")
     return s
 
@@ -146,6 +176,8 @@ def set_value(key: str, value: str) -> bool:
     s = setting(key)
     if s.kind == "map" and key == s.key:
         raise click.BadParameter(f"{key} is a map; set entries with {key}.<name>")
+    if s.kind == "tables" and key.count(".") != s.key.count(".") + 2:
+        raise click.BadParameter(f"set {s.key} fields with {valid_key(s)}")
     data = load_file()
     *tables, name = key.split(".")
     node = data
@@ -186,7 +218,7 @@ def file_value(key: str, data: dict[str, Any] | None = None) -> Any:
 
 def env_value(s: Setting) -> Any:
     raw = os.environ[s.env]
-    if s.kind != "map":
+    if s.kind == "str":
         return raw
     try:
         return json.loads(raw)
@@ -208,6 +240,13 @@ def resolve(key: str) -> tuple[Any, str]:
             raise click.ClickException(f"{s.key} ({source}) must be a table of strings")
         if key != s.key:
             value = value.get(key[len(s.key) + 1 :])
+    if s.kind == "tables" and value is not None:
+        if not isinstance(value, dict) or not all(
+            isinstance(t, dict) and all(isinstance(v, str) for v in t.values()) for t in value.values()
+        ):
+            raise click.ClickException(f"{s.key} ({source}) must be a table of tables of strings")
+        for part in key[len(s.key) + 1 :].split(".") if key != s.key else ():
+            value = value.get(part) if isinstance(value, dict) else None
     if value is None:
         return None, "unset"
     return value, source

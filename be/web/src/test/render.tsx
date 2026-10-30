@@ -6,12 +6,13 @@ import { vi } from 'vitest'
 
 import { TooltipProvider } from '@/components/ui/tooltip'
 
-export function renderApp(ui: ReactNode) {
+// path is where the router starts, for a page that reads its route
+export function renderApp(ui: ReactNode, path = '/') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
       <TooltipProvider>
-        <MemoryRouter>{ui}</MemoryRouter>
+        <MemoryRouter initialEntries={[path]}>{ui}</MemoryRouter>
       </TooltipProvider>
     </QueryClientProvider>,
   )

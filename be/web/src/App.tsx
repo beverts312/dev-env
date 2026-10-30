@@ -6,6 +6,7 @@ import { Mail } from '@/pages/Mail'
 import { MyPrs } from '@/pages/MyPrs'
 import { NotFound } from '@/pages/NotFound'
 import { Reviews } from '@/pages/Reviews'
+import { SkillPage } from '@/pages/SkillPage'
 import { Usage } from '@/pages/Usage'
 import { Home } from '@/pages/Home'
 import { Workspaces } from '@/pages/Workspaces'
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="mail" element={<Mail />} />
           <Route path="usage" element={<Usage />} />
           <Route path="config" element={<Config />} />
+          <Route path="p/:name" element={<SkillPage />} />
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
