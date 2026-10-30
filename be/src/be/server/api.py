@@ -795,6 +795,7 @@ def refresh_skill_page(name: str, request: Request) -> dict:
     s = state(request)
     with s.lock:
         if skill_pages.status(s.runs.get(name))["running"]:
+            log.info("not refreshing page %s: it is already refreshing", name)
             raise ActionFailed(f"{name} is already refreshing")
         model, _ = config.resolve("claude.model")
         try:

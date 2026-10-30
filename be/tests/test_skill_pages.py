@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import time
 
 import click
 import pytest
@@ -12,7 +13,12 @@ class FakeProc:
     def __init__(self, code=None):
         self.code = code
 
+    pid = 123
+
     def poll(self):
+        return self.code
+
+    def wait(self):
         return self.code
 
 
@@ -114,3 +120,15 @@ def test_status_explains_failure_with_result(tmp_path):
     assert failed["error"] == "claude exited 1\nno BigQuery access"
     # an error result fails the run even when claude exits 0
     assert skill_pages.status(skill_pages.Run(FakeProc(0), 5.0, log))["error"] == "claude exited 0\nno BigQuery access"
+
+
+def test_watch_logs_how_the_run_ended(tmp_path, caplog):
+    log = tmp_path / "log"
+    log.write_text(json.dumps({"type": "result", "result": "no BigQuery access", "is_error": True}))
+    with caplog.at_level("INFO", logger="be.skill_pages"):
+        skill_pages.watch("finops", skill_pages.Run(FakeProc(0), time.time(), tmp_path / "missing"))
+        skill_pages.watch("finops", skill_pages.Run(FakeProc(1), time.time(), log))
+    ok, failed = caplog.records
+    assert ok.levelname == "INFO" and ok.getMessage().startswith("refreshed page finops in ")
+    assert failed.levelname == "WARNING" and "failed after" in failed.getMessage()
+    assert "no BigQuery access" in failed.getMessage()

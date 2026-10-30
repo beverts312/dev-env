@@ -919,11 +919,16 @@ def finops(tmp_path, monkeypatch):
     procs = []
 
     class Proc:
+        pid = 123
+
         def __init__(self, cmd, **kw):
             self.cmd, self.code = cmd, None
             procs.append(self)
 
         def poll(self):
+            return self.code
+
+        def wait(self):
             return self.code
 
     monkeypatch.setattr(skill_pages.subprocess, "Popen", Proc)

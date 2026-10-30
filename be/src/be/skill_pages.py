@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -85,8 +86,24 @@ def start(page: dict, model: str | None) -> Run:
             )
         except FileNotFoundError as e:
             raise click.ClickException("claude is not installed or not on PATH") from e
-    log.info("started /%s for page %s in %s", page["skill"], page["name"], cwd)
-    return Run(proc, time.time(), logfile)
+    log.info(
+        "refreshing page %s: started /%s (pid %s, model %s) in %s, logging to %s",
+        page["name"], page["skill"], proc.pid, model or "default", cwd, logfile,
+    )
+    run = Run(proc, time.time(), logfile)
+    threading.Thread(target=watch, args=(page["name"], run), daemon=True).start()
+    return run
+
+
+def watch(name: str, run: Run) -> None:
+    """Log how the page's run ended once it does, whether or not the page is open to poll it."""
+    run.proc.wait()
+    took = time.time() - run.started
+    error = status(run)["error"]
+    if error:
+        log.warning("refreshing page %s failed after %.0fs: %s", name, took, error)
+    else:
+        log.info("refreshed page %s in %.0fs", name, took)
 
 
 def read_log(path: Path) -> dict:
