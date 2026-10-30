@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 import be.server
-from be import config, jira
+from be import claude_sessions, cmux, config, jira
 from be.commands import pr, ws
 from be.server import api, app, views
 
@@ -239,6 +239,101 @@ def test_start_work(serve, tmp_path, monkeypatch):
     assert c.post("/api/workspaces/proj/start", json={"key": "not a key"}).status_code == 400
     assert c.post("/api/workspaces/%2E%2E/start", json={"key": "ACME-12"}).status_code in (400, 404)
     assert len(started) == 1
+
+
+def test_open_vscode(serve, tmp_path, monkeypatch):
+    c, _, _, _ = serve
+    spaces = tmp_path / "spaces"
+    (spaces / "proj").mkdir(parents=True)
+    config.set_value("ws.dir", str(spaces))
+    runs = []
+    monkeypatch.setattr(ws.subprocess, "run", lambda args, **kw: runs.append(args) or ws.subprocess.CompletedProcess(args, 0, "", ""))
+    assert c.post("/api/workspaces/proj/vscode").json() == {"message": "opened proj in VS Code"}
+    assert runs == [["open", "-a", "Visual Studio Code", str((spaces / "proj").resolve())]]
+    monkeypatch.setattr(ws.subprocess, "run", lambda args, **kw: ws.subprocess.CompletedProcess(args, 1, "", "no app"))
+    resp = c.post("/api/workspaces/proj/vscode")
+    assert resp.status_code == 422 and "could not open VS Code: no app" in resp.json()["message"]
+    assert c.post("/api/workspaces/nope/vscode").status_code == 422
+
+
+def test_open_notes(serve, tmp_path, monkeypatch):
+    c, _, _, _ = serve
+    runs = []
+    monkeypatch.setattr(ws.subprocess, "run", lambda args, **kw: runs.append(args) or ws.subprocess.CompletedProcess(args, 0, "", ""))
+    config.set_value("notes.dir", str(tmp_path))
+    assert c.post("/api/notes/vscode").json() == {"message": f"opened {tmp_path} in VS Code"}
+    assert runs == [["open", "-a", "Visual Studio Code", str(tmp_path)]]
+    config.set_value("notes.dir", str(tmp_path / "nope"))
+    resp = c.post("/api/notes/vscode")
+    assert resp.status_code == 422 and "not found; set notes.dir" in resp.json()["message"]
+    assert len(runs) == 1
+
+
+def test_open_configs(serve, tmp_path, monkeypatch):
+    c, _, _, _ = serve
+    runs = []
+    monkeypatch.setattr(ws.subprocess, "run", lambda args, **kw: runs.append(args) or ws.subprocess.CompletedProcess(args, 0, "", ""))
+    config.set_value("notes.dir", str(tmp_path))
+    resp = c.post("/api/configs/vscode")
+    assert resp.status_code == 422 and "not found; set configs.workspace" in resp.json()["message"]
+    # by default, in notes.dir
+    default = tmp_path / "workspaces" / "configs.code-workspace"
+    default.parent.mkdir()
+    default.write_text("{}")
+    c.post("/api/configs/vscode")
+    other = tmp_path / "other.code-workspace"
+    other.write_text("{}")
+    config.set_value("configs.workspace", str(other))
+    assert c.post("/api/configs/vscode").json() == {"message": f"opened {other} in VS Code"}
+    assert [r[-1] for r in runs] == [str(default), str(other)]
+
+
+def test_delete_workspace(serve, tmp_path, monkeypatch):
+    c, _, _, _ = serve
+    spaces = tmp_path / "spaces"
+    (spaces / "proj" / "api").mkdir(parents=True)
+    config.set_value("ws.dir", str(spaces))
+    layouts = []
+    monkeypatch.setattr(cmux, "find_cmux", lambda: "cmux")
+    monkeypatch.setattr(cmux, "delete_layout", lambda binary, name: layouts.append(name) or True)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    root = (spaces / "proj").resolve()
+    folder = tmp_path / "home" / ".claude" / "projects" / claude_sessions.project_key(root)
+    folder.mkdir(parents=True)
+    (folder / "11111111-1111-1111-1111-111111111111.jsonl").write_text(f'{{"type":"user","cwd":"{root}"}}\n')
+    assert c.delete("/api/workspaces/proj").json() == {"message": "deleted proj and 1 claude session"}
+    assert not (spaces / "proj").exists() and layouts == ["proj"]
+    assert not folder.exists()
+    resp = c.delete("/api/workspaces/proj")
+    assert resp.status_code == 422 and "proj is not a workspace" in resp.json()["message"]
+    assert c.delete("/api/workspaces/%2E%2E").status_code in (400, 404, 405)
+    assert spaces.is_dir()
+
+
+def test_workspace_sessions(serve, tmp_path, monkeypatch):
+    c, _, _, _ = serve
+    spaces = tmp_path / "spaces"
+    root = (spaces / "proj").resolve()
+    root.mkdir(parents=True)
+    config.set_value("ws.dir", str(spaces))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    folder = tmp_path / "home" / ".claude" / "projects" / claude_sessions.project_key(root)
+    folder.mkdir(parents=True)
+    sid = "11111111-1111-1111-1111-111111111111"
+    (folder / f"{sid}.jsonl").write_text(
+        f'{{"type":"user","cwd":"{root}"}}\n{{"type":"ai-title","aiTitle":"Fix login"}}\n'
+    )
+    sessions = c.get("/api/workspaces/proj/sessions").json()["sessions"]
+    assert [(s["id"], s["title"]) for s in sessions] == [(sid, "Fix login")]
+    resumed = []
+    monkeypatch.setattr(ws, "resume_session", lambda root, cwd, sid, model=None, window=None: resumed.append((root, cwd, sid)))
+    assert c.post(f"/api/workspaces/proj/sessions/{sid}/resume").json() == {"message": "resumed Fix login"}
+    assert resumed == [(root, root, sid)]
+    resp = c.post("/api/workspaces/proj/sessions/nope/resume")
+    assert resp.status_code == 422 and "not a session id" in resp.json()["message"]
+    assert c.delete(f"/api/workspaces/proj/sessions/{sid}").json() == {"message": "deleted Fix login"}
+    assert c.get("/api/workspaces/proj/sessions").json() == {"sessions": []}
+    assert c.delete(f"/api/workspaces/proj/sessions/{sid}").status_code == 422
 
 
 def test_cloud_issue(serve, monkeypatch):

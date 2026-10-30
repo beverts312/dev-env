@@ -8,12 +8,13 @@ import threading
 import time
 from dataclasses import dataclass, field
 from datetime import date
+from pathlib import Path
 
 import click
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from be import claude_usage, config, cursor_usage, gcal, github, jira, todo
+from be import claude_sessions, claude_usage, config, cursor_usage, gcal, github, jira, todo
 from be.commands import pr, ws
 from be.server import views
 from be.server.views import MINE_BUTTONS, SettingError
@@ -241,6 +242,51 @@ def open_workspace(name: str, request: Request) -> dict:
     return {"message": f"opened {name}"}
 
 
+@router.post("/workspaces/{name}/vscode")
+def open_vscode(name: str) -> dict:
+    """Open a workspace directory in ws.dir in VS Code."""
+    valid_name(name)
+    try:
+        ws.open_vscode(find_workspace(name))
+    except click.ClickException as e:
+        log.warning("opening workspace %s in VS Code failed: %s", name, e.format_message())
+        raise ActionFailed(f"{name}: {e.format_message()}") from e
+    log.info("opened workspace %s in VS Code", name)
+    return {"message": f"opened {name} in VS Code"}
+
+
+def notes_dir() -> Path:
+    value, _ = config.resolve("notes.dir")
+    return Path(value).expanduser()
+
+
+def open_in_vscode(what: str, path: Path, ok: bool, setting: str) -> dict:
+    try:
+        if not ok:
+            raise click.ClickException(f"{path} not found; set {setting}")
+        ws.open_vscode(path)
+    except click.ClickException as e:
+        log.warning("opening %s in VS Code failed: %s", what, e.format_message())
+        raise ActionFailed(f"{what}: {e.format_message()}") from e
+    log.info("opened %s in VS Code", what)
+    return {"message": f"opened {path} in VS Code"}
+
+
+@router.post("/notes/vscode")
+def open_notes() -> dict:
+    """Open notes.dir in VS Code."""
+    notes = notes_dir()
+    return open_in_vscode("notes", notes, notes.is_dir(), "notes.dir")
+
+
+@router.post("/configs/vscode")
+def open_configs() -> dict:
+    """Open the configs VS Code workspace: configs.workspace, else notes.dir's workspaces/configs.code-workspace."""
+    value, _ = config.resolve("configs.workspace")
+    path = Path(value).expanduser() if value else notes_dir() / "workspaces" / "configs.code-workspace"
+    return open_in_vscode("configs", path, path.is_file(), "configs.workspace")
+
+
 class NewWorkspace(BaseModel):
     name: str
     repos: str = ""
@@ -332,6 +378,65 @@ def start_work(name: str, body: Link, request: Request) -> dict:
             raise ActionFailed(f"{name}: {e.format_message()}") from e
     log.info("started %s in workspace %s", key, name)
     return {"message": f"started {key} in {name}"}
+
+
+@router.delete("/workspaces/{name}")
+def delete_workspace(name: str, request: Request) -> dict:
+    """Delete a workspace in ws.dir, as `ws delete` does: its directory and its saved cmux layout;
+    then the claude sessions run in it."""
+    valid_name(name)
+    with state(request).lock:
+        try:
+            find_workspace(name)
+            parent, _ = config.resolve("ws.dir")
+            root = ws.delete_target(name, parent)
+            ws.remove_workspace(root)
+            sessions = claude_sessions.delete_all(root)
+        except click.ClickException as e:
+            log.warning("deleting workspace %s failed: %s", name, e.format_message())
+            raise ActionFailed(f"{name}: {e.format_message()}") from e
+    log.info("deleted workspace %s and %d claude sessions", name, sessions)
+    return {"message": f"deleted {name} and {sessions} claude session{'' if sessions == 1 else 's'}"}
+
+
+@router.get("/workspaces/{name}/sessions")
+def workspace_sessions(name: str) -> dict:
+    """The claude sessions run in the workspace or folders under it, the most recent first."""
+    valid_name(name)
+    try:
+        root = find_workspace(name)
+        return {"sessions": claude_sessions.list_sessions(root)}
+    except click.ClickException as e:
+        raise ActionFailed(f"{name}: {e.format_message()}") from e
+
+
+@router.post("/workspaces/{name}/sessions/{session_id}/resume")
+def resume_session(name: str, session_id: str, request: Request) -> dict:
+    """Open the workspace and resume the claude session in a new pane, from the folder it ran in."""
+    valid_name(name)
+    with state(request).lock:
+        try:
+            root = find_workspace(name)
+            session = claude_sessions.get_session(root, session_id)
+            window, _ = config.resolve("cmux.window")
+            ws.resume_session(root, Path(session["cwd"]), session_id, window=window)
+        except click.ClickException as e:
+            log.warning("resuming %s in workspace %s failed: %s", session_id, name, e.format_message())
+            raise ActionFailed(f"{name}: {e.format_message()}") from e
+    log.info("resumed %s in workspace %s", session_id, name)
+    return {"message": f"resumed {session['title']}"}
+
+
+@router.delete("/workspaces/{name}/sessions/{session_id}")
+def delete_session(name: str, session_id: str, request: Request) -> dict:
+    valid_name(name)
+    with state(request).lock:
+        try:
+            session = claude_sessions.delete_session(find_workspace(name), session_id)
+        except click.ClickException as e:
+            raise ActionFailed(f"{name}: {e.format_message()}") from e
+    log.info("deleted session %s in workspace %s", session_id, name)
+    return {"message": f"deleted {session['title']}"}
 
 
 class CloudIssue(BaseModel):

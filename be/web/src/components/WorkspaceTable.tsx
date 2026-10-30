@@ -1,5 +1,8 @@
-import { FolderOpen } from 'lucide-react'
+import { useState } from 'react'
+import { Code, FolderOpen, MessagesSquare, Trash2 } from 'lucide-react'
 
+import { ConfirmButton } from '@/components/ConfirmButton'
+import { SessionsDialog } from '@/components/SessionsDialog'
 import { SectionState, TableSection } from '@/components/TableSection'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -7,10 +10,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useAction, useTable } from '@/hooks/queries'
 import { api } from '@/lib/api'
 
-// The workspaces in ws.dir; clicking one opens it, as `ws open` does
+// The workspaces in ws.dir; clicking one opens it, as `ws open` does; sessions lists its claude sessions
 export function WorkspaceTable() {
   const data = useTable('workspaces')
   const open = useAction(api.openWorkspace)
+  const vscode = useAction(api.openVscode)
+  const remove = useAction(api.deleteWorkspace, ['workspaces', 'jira'])
+  const [sessionsFor, setSessionsFor] = useState<string | null>(null)
   const rows = data.data?.rows ?? null
   return (
     <TableSection
@@ -64,17 +70,43 @@ export function WorkspaceTable() {
                   </div>
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">{w.extra_dirs.join(', ')}</TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-right whitespace-nowrap">
+                  <Button size="xs" variant="outline" className="mr-1" onClick={() => vscode.mutate([w.dir])}>
+                    <Code />
+                    vscode
+                  </Button>
+                  <Button size="xs" variant="outline" className="mr-1" onClick={() => setSessionsFor(w.dir)}>
+                    <MessagesSquare />
+                    sessions
+                  </Button>
                   <Button size="xs" variant="outline" data-nav-primary onClick={() => open.mutate([w.dir])}>
                     <FolderOpen />
                     open
                   </Button>
+                  <ConfirmButton
+                    size="xs"
+                    variant="ghost"
+                    className="ml-1 text-destructive"
+                    disabled={remove.isPending}
+                    aria-label={`delete ${w.dir}`}
+                    title={`Delete workspace ${w.dir}?`}
+                    description={
+                      w.repos.length
+                        ? `This deletes the folder, its clones of ${w.repos.join(', ')} with any unpushed work, its saved cmux layout, and its claude sessions.`
+                        : 'This deletes the folder, its saved cmux layout, and its claude sessions.'
+                    }
+                    confirm="delete"
+                    onConfirm={() => remove.mutate([w.dir])}
+                  >
+                    <Trash2 />
+                  </ConfirmButton>
                 </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       )}
+      {sessionsFor && <SessionsDialog key={sessionsFor} workspace={sessionsFor} onClose={() => setSessionsFor(null)} />}
     </TableSection>
   )
 }

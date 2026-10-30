@@ -270,6 +270,13 @@ def window_args(window: str | None) -> list[str]:
     return ["--window", window] if window else []
 
 
+def open_vscode(root: Path) -> None:
+    """Open a directory, or a .code-workspace file, in VS Code."""
+    result = subprocess.run(["open", "-a", "Visual Studio Code", str(root)], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise click.ClickException(f"could not open VS Code: {(result.stderr or result.stdout).strip()}")
+
+
 def open_root(root: Path, model: str | None = None, window: str | None = None) -> None:
     """Open root's saved layout in cmux, or switch to it if it is already open."""
     if not root.is_dir():
@@ -301,6 +308,17 @@ def open_root(root: Path, model: str | None = None, window: str | None = None) -
 
 def start_work(root: Path, key: str, model: str | None = None, window: str | None = None) -> None:
     """Open root's workspace and start claude in plan mode on key, in a new pane beside the others."""
+    prompt = shlex.quote(f"lets get started on {key}")
+    claude_pane(root, root, ["--permission-mode", "plan", prompt], model, window)
+
+
+def resume_session(root: Path, cwd: Path, session_id: str, model: str | None = None, window: str | None = None) -> None:
+    """Open root's workspace and resume a claude session from cwd, in a new pane beside the others."""
+    claude_pane(root, cwd, ["--resume", shlex.quote(session_id)], model, window)
+
+
+def claude_pane(root: Path, cwd: Path, extra: list[str], model: str | None, window: str | None) -> None:
+    """Open root's workspace and run claude with extra args from cwd, in a new pane beside the others."""
     if not model:
         model, _ = config.resolve("claude.model")
     open_root(root, model, window)
@@ -309,10 +327,9 @@ def start_work(root: Path, key: str, model: str | None = None, window: str | Non
     found = cmux.find_workspace(binary, name)
     if found is None:
         raise click.ClickException(f"could not find the open cmux workspace {name}")
-    prompt = shlex.quote(f"lets get started on {key}")
-    command = claude_command([], model or "", ["--permission-mode", "plan", prompt])
+    command = claude_command([], model or "", extra)
     # new-pane has no --cwd
-    cmux.new_pane(binary, *found, f"cd {shlex.quote(str(root))} && {command}")
+    cmux.new_pane(binary, *found, f"cd {shlex.quote(str(cwd))} && {command}")
 
 
 def cloud_issue(text: str, model: str | None = None, window: str | None = None) -> None:

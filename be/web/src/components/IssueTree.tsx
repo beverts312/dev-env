@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ChevronRight, FolderOpen, FolderPlus, Play, Plus } from 'lucide-react'
+import { ChevronRight, Code, FolderOpen, FolderPlus, Play, Plus } from 'lucide-react'
 
 import { CloudIssueDialog } from '@/components/CloudIssueDialog'
 import { MultiFilter } from '@/components/MultiFilter'
@@ -21,8 +21,9 @@ const STATUS_STYLES: Record<string, string> = {
 }
 
 // The Jira issues assigned to you, as `jira ls` nests them. Opening an issue opens its workspace,
-// or offers to create one or link one. Your To Do issues with a workspace can also start work: a new pane there
-// running claude in plan mode on the issue. New cloud issue asks for a description and runs claude's /cloud-issue on it
+// or offers to create one or link one; an issue with a workspace can open it in VS Code too. Your To Do issues with a
+// workspace can also start work: a new pane there running claude in plan mode on the issue. New cloud issue asks for a
+// description and runs claude's /cloud-issue on it
 export function IssueTree() {
   const data = useTable('jira')
   const spaces = useTable('workspaces')
@@ -32,6 +33,7 @@ export function IssueTree() {
   const [filing, setFiling] = useState(false)
   const open = useAction(api.openWorkspace)
   const start = useAction(api.startWork)
+  const vscode = useAction(api.openVscode)
 
   const issues = data.data?.rows ?? null
   const shown = useMemo(() => filterTree(issues ?? [], picks), [issues, picks])
@@ -45,6 +47,7 @@ export function IssueTree() {
     else setCreating(issue)
   }
   const startIssue = (issue: Issue) => start.mutate([issue.workspace, issue.key])
+  const codeIssue = (issue: Issue) => vscode.mutate([issue.workspace])
 
   const toolbar = issues && (
     <>
@@ -100,6 +103,7 @@ export function IssueTree() {
               onToggle={toggle}
               onOpen={openIssue}
               onStart={startIssue}
+              onCode={codeIssue}
             />
           ))}
         </ul>
@@ -124,6 +128,7 @@ function IssueNode({
   onToggle,
   onOpen,
   onStart,
+  onCode,
   parentKey,
 }: {
   node: ShownIssue
@@ -132,6 +137,7 @@ function IssueNode({
   onToggle: (key: string, open: boolean) => void
   onOpen: (issue: Issue) => void
   onStart: (issue: Issue) => void
+  onCode: (issue: Issue) => void
   parentKey?: string
 }) {
   const { issue, context, children } = node
@@ -200,11 +206,17 @@ function IssueNode({
             start work
           </Button>
         )}
+        {issue.workspace && (
+          <Button variant="ghost" size="xs" className={cn(!startable && 'ml-auto', reveal)} onClick={() => onCode(issue)}>
+            <Code />
+            vscode
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="xs"
           data-nav-primary
-          className={cn(!startable && 'ml-auto', reveal)}
+          className={cn(!startable && !issue.workspace && 'ml-auto', reveal)}
           onClick={() => onOpen(issue)}
         >
           {issue.workspace ? <FolderOpen /> : <FolderPlus />}
@@ -222,6 +234,7 @@ function IssueNode({
               onToggle={onToggle}
               onOpen={onOpen}
               onStart={onStart}
+              onCode={onCode}
               parentKey={issue.key}
             />
           ))}

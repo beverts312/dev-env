@@ -97,6 +97,13 @@ export function useTodos(done = false) {
   return useQuery({ queryKey: [...todosKey, done], queryFn: () => api.todos(done) })
 }
 
+export const sessionsKey = (workspace: string) => ['sessions', workspace] as const
+
+// The claude sessions run in a workspace, read afresh from their transcripts
+export function useSessions(workspace: string) {
+  return useQuery({ queryKey: sessionsKey(workspace), queryFn: () => api.workspaceSessions(workspace) })
+}
+
 // how often plan usage is reread, on the usage page and the reviews page's agent picker
 const USAGE_EVERY = 60_000
 

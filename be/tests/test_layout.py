@@ -109,6 +109,18 @@ def test_start_work_opens_plan_mode_pane(tmp_path, monkeypatch):
     ]
 
 
+def test_resume_session_opens_pane_in_its_folder(tmp_path, monkeypatch):
+    from be import cmux
+
+    monkeypatch.setattr(ws, "open_root", lambda root, model=None, window=None: None)
+    monkeypatch.setattr(cmux, "start", lambda: "cmux")
+    monkeypatch.setattr(cmux, "find_workspace", lambda binary, title: ("w1", "ws1"))
+    panes = []
+    monkeypatch.setattr(cmux, "new_pane", lambda *args: panes.append(args))
+    ws.resume_session(tmp_path, tmp_path / "api", "abc", "opus")
+    assert panes == [("cmux", "w1", "ws1", f"cd {tmp_path / 'api'} && claude --model opus --resume abc")]
+
+
 def test_start_work_needs_the_open_workspace(tmp_path, monkeypatch):
     from be import cmux
 

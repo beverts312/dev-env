@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { Keyboard, Moon, Sun } from 'lucide-react'
+import { Keyboard, Moon, NotebookPen, Settings2, Sun } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { NavLink, Outlet, useLocation } from 'react-router'
 
@@ -23,9 +23,9 @@ import {
   SidebarRail,
   SidebarTrigger,
 } from '@/components/ui/sidebar'
-import { useTable } from '@/hooks/queries'
+import { useAction, useTable } from '@/hooks/queries'
 import { useKeyboardNav } from '@/hooks/useKeyboardNav'
-import type { PrTableId } from '@/lib/api'
+import { api, type PrTableId } from '@/lib/api'
 import { countTree, filterTree, prShown, usePrFilters, useTreePicks } from '@/lib/filters'
 import { KEYS, PAGES, type CountId } from '@/lib/pages'
 import { usePersistent } from '@/lib/store'
@@ -37,6 +37,8 @@ export function Layout() {
   const { pathname } = useLocation()
   useKeyboardNav(useCallback(() => setHelp(true), []))
   const page = PAGES.find((p) => p.path === pathname)
+  const notes = useAction(api.openNotes)
+  const configs = useAction(api.openConfigs)
 
   return (
     <SidebarProvider open={open} onOpenChange={setOpen}>
@@ -75,6 +77,14 @@ export function Layout() {
           <Separator orientation="vertical" className="h-4" />
           <h1 className="text-sm font-medium">{page?.label ?? 'not found'}</h1>
           <div className="ml-auto flex items-center gap-1">
+            <Button variant="ghost" size="sm" onClick={() => notes.mutate([])} className="text-muted-foreground">
+              <NotebookPen />
+              notes
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => configs.mutate([])} className="text-muted-foreground">
+              <Settings2 />
+              configs
+            </Button>
             <Button variant="ghost" size="sm" onClick={() => setHelp(true)} className="text-muted-foreground">
               <Keyboard />
               keys

@@ -59,6 +59,12 @@ SETTINGS = {
         ),
         Setting("ws.dir", "WS_DIR", "Parent directory for workspaces"),
         Setting("todo.dir", "BE_TODO_DIR", "Directory that holds the todo markdown files", "~/notes/todos"),
+        Setting("notes.dir", "BE_NOTES_DIR", "Notes directory the server's notes button opens in VS Code", "~/notes"),
+        Setting(
+            "configs.workspace",
+            "BE_CONFIGS_WORKSPACE",
+            "VS Code workspace file the server's configs button opens (default: <notes.dir>/workspaces/configs.code-workspace)",
+        ),
         Setting("claude.model", "BE_CLAUDE_MODEL", "Model passed as claude --model", "claude-opus-5-5"),
         Setting("cmux.bin", "BE_CMUX_BIN", "Path to the cmux binary"),
         Setting(

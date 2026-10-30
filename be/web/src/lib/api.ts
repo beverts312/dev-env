@@ -52,6 +52,17 @@ export type Workspace = {
   issues?: string[]
 }
 
+// A Claude Code session run in a workspace, or a folder under it (subdir)
+export type ClaudeSession = {
+  id: string
+  title: string
+  last_prompt: string
+  cwd: string
+  subdir: string
+  updated: string
+  size: number
+}
+
 export type TableId = 'review' | 'team' | 'mine' | 'jira' | 'workspaces'
 export type PrTableId = 'review' | 'team' | 'mine'
 // the PR tables shown, with the starred PRs, which the browser keeps rather than the server
@@ -224,6 +235,9 @@ export const api = {
   bulk: (action: MineAction, prs: string[]) => request<BulkDone>('POST', '/prs/bulk', { action, prs }),
   starred: (prs: string[]) => request<StarredData>('POST', '/prs/starred', { prs }),
   openWorkspace: (name: string) => request<Done>('POST', `/workspaces/${segment(name)}/open`),
+  openNotes: () => request<Done>('POST', '/notes/vscode'),
+  openConfigs: () => request<Done>('POST', '/configs/vscode'),
+  openVscode: (name: string) => request<Done>('POST', `/workspaces/${segment(name)}/vscode`),
   createWorkspace: (fields: {
     name: string
     repos: string
@@ -235,6 +249,13 @@ export const api = {
     request<Done>('POST', `/workspaces/${segment(name)}/link`, { key }),
   startWork: (name: string, key: string) =>
     request<Done>('POST', `/workspaces/${segment(name)}/start`, { key }),
+  deleteWorkspace: (name: string) => request<Done>('DELETE', `/workspaces/${segment(name)}`),
+  workspaceSessions: (name: string) =>
+    request<{ sessions: ClaudeSession[] }>('GET', `/workspaces/${segment(name)}/sessions`),
+  resumeSession: (name: string, id: string) =>
+    request<Done>('POST', `/workspaces/${segment(name)}/sessions/${segment(id)}/resume`),
+  deleteSession: (name: string, id: string) =>
+    request<Done>('DELETE', `/workspaces/${segment(name)}/sessions/${segment(id)}`),
   cloudIssue: (text: string) => request<Done>('POST', '/jira/cloud-issue', { text }),
   config: () => request<ConfigData>('GET', '/config'),
   setConfig: (key: string, value: string, name = '') =>
