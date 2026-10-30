@@ -5,9 +5,9 @@ import type { TableId } from '@/lib/api'
 // what a page's sidebar badge counts: its tables' rows, or the open todos
 export type CountId = TableId | 'todos'
 
-// the sidebar's pages, in order; the number keys and t switch between them
+// the pages, in order; the number keys and t switch between them, and the sidebar lists all but home
 export const PAGES: { path: string; label: string; icon: LucideIcon; tables: CountId[] }[] = [
-  { path: '/', label: 'my work', icon: ListTodo, tables: ['jira'] },
+  { path: '/', label: 'home', icon: ListTodo, tables: ['jira'] },
   { path: '/todos', label: 'todos', icon: ListChecks, tables: ['todos'] },
   { path: '/prs', label: 'my PRs', icon: GitPullRequest, tables: ['mine'] },
   { path: '/reviews', label: 'reviews', icon: Eye, tables: ['review', 'team'] },

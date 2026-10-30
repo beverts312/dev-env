@@ -29,6 +29,7 @@ import type { PrTableId } from '@/lib/api'
 import { countTree, filterTree, prShown, usePrFilters, useTreePicks } from '@/lib/filters'
 import { KEYS, PAGES, type CountId } from '@/lib/pages'
 import { usePersistent } from '@/lib/store'
+import { cn } from '@/lib/utils'
 
 export function Layout() {
   const [open, setOpen] = usePersistent('be.sidebar', true)
@@ -41,18 +42,18 @@ export function Layout() {
     <SidebarProvider open={open} onOpenChange={setOpen}>
       <Sidebar collapsible="icon">
         <SidebarHeader>
-          <div className="flex items-center gap-2 px-1 py-1">
+          <NavLink to="/" aria-label="home" className="flex items-center gap-2 px-1 py-1">
             <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">
               be
             </div>
             <span className="truncate text-sm font-medium group-data-[collapsible=icon]:hidden">dev env</span>
-          </div>
+          </NavLink>
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu>
-                {PAGES.filter((p) => p.tables.length).map((p) => (
+                {PAGES.filter((p) => p.path !== '/' && p.tables.length).map((p) => (
                   <NavItem key={p.path} page={p} active={pathname === p.path} />
                 ))}
               </SidebarMenu>
@@ -81,7 +82,8 @@ export function Layout() {
             <ThemeToggle />
           </div>
         </header>
-        <div className="mx-auto w-full max-w-7xl space-y-4 p-4">
+        {/* home is wider, for its calendar pane */}
+        <div className={cn('mx-auto w-full space-y-4 p-4', pathname === '/' ? 'max-w-[96rem]' : 'max-w-7xl')}>
           <Outlet />
         </div>
       </SidebarInset>

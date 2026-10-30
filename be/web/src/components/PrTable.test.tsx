@@ -94,6 +94,7 @@ describe('PrTable', () => {
   })
 
   it('stars a PR into the starred table, without your PR actions', async () => {
+    writePersistent('be.collapsed.starred', false)
     mockApi({
       'GET /tables/mine': table(MINE),
       'POST /prs/starred': { rows: [pr(7, { title: 'PR 7 now', actions: undefined })], merged: [], error: null },
@@ -115,6 +116,7 @@ describe('PrTable', () => {
   })
 
   it('drops merged PRs and unstars', async () => {
+    writePersistent('be.collapsed.starred', false)
     writePersistent('be.starred', [pr(7), pr(8)])
     const calls = mockApi({ 'POST /prs/starred': { rows: [pr(8)], merged: ['acme/api#7'], error: null } })
     renderApp(<StarredTable title="starred" />)
@@ -125,5 +127,13 @@ describe('PrTable', () => {
     await userEvent.click(screen.getByRole('button', { name: 'unstar acme/api#8' }))
     expect(await screen.findByText('no starred PRs; star one from your PRs or reviews')).toBeInTheDocument()
     expect(readPersistent<Pr[]>('be.starred', [])).toEqual([])
+  })
+
+  it('starts the starred table collapsed', async () => {
+    writePersistent('be.starred', [pr(7)])
+    mockApi({ 'POST /prs/starred': { rows: [pr(7)], merged: [], error: null } })
+    renderApp(<StarredTable title="starred" />)
+    await userEvent.click(screen.getByRole('button', { name: 'expand starred' }))
+    expect(await screen.findByText('PR 7')).toBeInTheDocument()
   })
 })

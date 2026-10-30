@@ -691,3 +691,23 @@ def test_todo_errors(serve, tmp_path, monkeypatch):
     # without jira.url a todo's Jira key just has no link
     c.post("/api/todos", json={"title": "x", "jira": "ACME-2"})
     assert c.get("/api/todos").json()["rows"][0]["url"] == ""
+
+
+def test_calendar(serve, monkeypatch):
+    from be import gcal
+    from datetime import date
+
+    c, *_ = serve
+    asked = []
+    monkeypatch.setattr(gcal, "events", lambda day, tz: asked.append((day, tz)) or [{"id": "e1", "title": "Standup"}])
+    data = c.get("/api/calendar", params={"day": "2026-10-29", "tz": "America/Denver"}).json()
+    assert asked == [(date(2026, 10, 29), "America/Denver")]
+    assert data == {**data, "day": "2026-10-29", "events": [{"id": "e1", "title": "Standup"}], "error": None}
+
+    def fail(day, tz):
+        raise gcal.CalendarError("not signed in to Google; run `be calendar login`")
+
+    monkeypatch.setattr(gcal, "events", fail)
+    data = c.get("/api/calendar", params={"day": "2026-10-29"}).json()
+    assert data == {**data, "events": [], "error": "not signed in to Google; run `be calendar login`"}
+    assert c.get("/api/calendar", params={"day": "tomorrow"}).status_code == 400

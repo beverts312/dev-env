@@ -5,7 +5,7 @@ export function NotFound() {
     <p className="text-sm text-muted-foreground">
       Nothing here.{' '}
       <Link to="/" className="text-primary hover:underline">
-        Back to my work
+        Back home
       </Link>
     </p>
   )

@@ -7,12 +7,13 @@ import os
 import threading
 import time
 from dataclasses import dataclass, field
+from datetime import date
 
 import click
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from be import claude_usage, config, cursor_usage, github, jira, todo
+from be import claude_usage, config, cursor_usage, gcal, github, jira, todo
 from be.commands import pr, ws
 from be.server import views
 from be.server.views import MINE_BUTTONS, SettingError
@@ -433,6 +434,22 @@ def get_cursor_usage() -> dict:
     except click.ClickException as e:
         log.warning("reading cursor usage failed: %s", e.format_message())
         out["error"] = e.format_message()
+    return out
+
+
+@router.get("/calendar")
+def get_calendar(day: str, tz: str = "UTC") -> dict:
+    """Your events on day (YYYY-MM-DD) in the browser's time zone, or why they couldn't be read."""
+    try:
+        parsed = date.fromisoformat(day)
+    except ValueError:
+        raise HTTPException(400, f"day must be YYYY-MM-DD, not {day!r}") from None
+    out = {"day": day, "events": [], "error": None, "fetched_at": time.time()}
+    try:
+        out["events"] = gcal.events(parsed, tz)
+    except gcal.CalendarError as e:
+        log.warning("reading the calendar failed: %s", e)
+        out["error"] = str(e)
     return out
 
 

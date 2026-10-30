@@ -7,7 +7,7 @@ import { NotFound } from '@/pages/NotFound'
 import { Reviews } from '@/pages/Reviews'
 import { Todos } from '@/pages/Todos'
 import { Usage } from '@/pages/Usage'
-import { Work } from '@/pages/Work'
+import { Home } from '@/pages/Home'
 import { Workspaces } from '@/pages/Workspaces'
 
 export default function App() {
@@ -15,7 +15,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route element={<Layout />}>
-          <Route index element={<Work />} />
+          <Route index element={<Home />} />
           <Route path="todos" element={<Todos />} />
           <Route path="prs" element={<MyPrs />} />
           <Route path="reviews" element={<Reviews />} />

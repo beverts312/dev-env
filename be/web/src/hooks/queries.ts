@@ -107,3 +107,18 @@ export function useClaudeUsage() {
 export function useCursorUsage() {
   return useQuery({ queryKey: ['cursor-usage'], queryFn: api.cursorUsage, refetchInterval: USAGE_EVERY })
 }
+
+const CALENDAR_EVERY = 5 * 60_000
+
+// A day's events, in the browser's time zone; today's are reread every few minutes
+export function useCalendar(day: string, today: boolean) {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+  return useQuery({
+    queryKey: ['calendar', day, tz],
+    queryFn: () => api.calendar(day, tz),
+    staleTime: CALENDAR_EVERY,
+    refetchInterval: today ? CALENDAR_EVERY : false,
+    // keep showing the last day while the next loads
+    placeholderData: (prev) => prev,
+  })
+}

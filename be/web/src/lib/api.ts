@@ -108,6 +108,30 @@ export type ClaudeUsage = {
   fetched_at: number
 }
 
+// one of your Google Calendar events; start and end are dates when all_day, else RFC 3339 times
+export type CalEvent = {
+  id: string
+  title: string
+  start: string
+  end: string
+  all_day: boolean
+  html_link: string | null
+  meet_url: string | null
+  doc_url: string | null
+  location: string
+  // your RSVP: accepted (also your own event), tentative or needsAction; declined ones are left out
+  response: string
+  attendees: number
+}
+
+export type CalendarDay = {
+  day: string
+  events: CalEvent[]
+  error: string | null
+  // seconds since the epoch
+  fetched_at: number
+}
+
 // on-demand spend past the plan, as the Cursor agent's /usage shows it
 export type OnDemand = {
   kind: 'fixed' | 'unlimited' | 'disabled' | 'unavailable'
@@ -215,6 +239,8 @@ export const api = {
   unsetConfig: (key: string) => request<Done>('DELETE', `/config/${segment(key)}`),
   claudeUsage: () => request<ClaudeUsage>('GET', '/claude-usage'),
   cursorUsage: () => request<CursorUsage>('GET', '/cursor-usage'),
+  calendar: (day: string, tz: string) =>
+    request<CalendarDay>('GET', `/calendar?day=${segment(day)}&tz=${segment(tz)}`),
   todos: (done = false) => request<TodosData>('GET', `/todos${done ? '?done=true' : ''}`),
   addTodo: (fields: TodoFields) => request<TodoDone>('POST', '/todos', fields),
   updateTodo: (id: string, fields: TodoFields) => request<TodoDone>('PUT', `/todos/${segment(id)}`, fields),

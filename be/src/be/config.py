@@ -78,6 +78,20 @@ SETTINGS = {
         Setting("jira.email", "JIRA_EMAIL", "Atlassian account email for the Jira API"),
         Setting("jira.token", "JIRA_API_TOKEN", "Atlassian API token for the Jira API", secret=True),
         Setting("jira.projects", "JIRA_PROJECTS", "Jira project keys and their descriptions", kind="map"),
+        Setting("google.client_id", "GOOGLE_CLIENT_ID", "OAuth desktop client ID for `be calendar login`"),
+        Setting(
+            "google.client_secret",
+            "GOOGLE_CLIENT_SECRET",
+            "OAuth desktop client secret for `be calendar login`",
+            secret=True,
+        ),
+        Setting(
+            "google.refresh_token",
+            "GOOGLE_REFRESH_TOKEN",
+            "Google refresh token, saved by `be calendar login`",
+            secret=True,
+        ),
+        Setting("calendar.id", "BE_CALENDAR_ID", "Google calendar the home page shows", "primary"),
     )
 }
 

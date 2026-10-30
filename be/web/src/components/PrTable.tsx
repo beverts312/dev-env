@@ -133,6 +133,7 @@ function PrTableView({ table, title, data }: { table: PrViewId; title: string; d
     <TableSection
       id={table}
       title={title}
+      defaultCollapsed={table === 'starred'}
       shown={rows ? shown.length : undefined}
       hidden={rows ? rows.length - shown.length : 0}
       onRefresh={data.refresh}

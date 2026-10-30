@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { usePersistent } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
-// A titled card holding one table, with its collapse toggle (remembered), shown and hidden
+// A titled card holding one table, with its collapse toggle (remembered, else defaultCollapsed), shown and hidden
 // counts, refresh button, and filters. The keyboard moves between the rows of a page's sections.
 export function TableSection({
   id,
@@ -17,6 +17,7 @@ export function TableSection({
   onRefresh,
   refreshing = false,
   toolbar,
+  defaultCollapsed = false,
   children,
 }: {
   id: string
@@ -26,9 +27,10 @@ export function TableSection({
   onRefresh?: () => void
   refreshing?: boolean
   toolbar?: ReactNode
+  defaultCollapsed?: boolean
   children: ReactNode
 }) {
-  const [collapsed, setCollapsed] = usePersistent(`be.collapsed.${id}`, false)
+  const [collapsed, setCollapsed] = usePersistent(`be.collapsed.${id}`, defaultCollapsed)
   return (
     <section
       data-nav-section
