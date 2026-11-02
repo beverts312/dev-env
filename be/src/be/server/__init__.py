@@ -62,7 +62,8 @@ def server(
     claude.pr.model and cursor.pr.model apply at once unless --parent,
     --log-level, --agent, --claude-model or --cursor-model was given. The reviews
     page's agent toggle overrides that choice for a review started from the page.
-    /mcp serves an MCP server with tools for managing your todos, as `be todo` does.
+    /mcp serves an MCP server with tools for managing your todos, as `be todo` does, and the
+    config file, as `be config` does.
     Ctrl-C stops it.
     """
     logging.basicConfig(format="%(asctime)s %(levelname)s %(name)s: %(message)s")

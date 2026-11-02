@@ -5,15 +5,19 @@ import type { TableId } from '@/lib/api'
 // what a page's sidebar badge counts: its tables' rows
 export type CountId = TableId
 
+// where a page sits in the sidebar: the PR section, the tools section, or the footer; skill pages
+// get their own section beneath tools
+export type NavSection = 'prs' | 'tools' | 'footer'
+
 // the pages, in order; the number keys and t switch between them, and the sidebar lists all but home
-export const PAGES: { path: string; label: string; icon: LucideIcon; tables: CountId[] }[] = [
+export const PAGES: { path: string; label: string; icon: LucideIcon; tables: CountId[]; nav?: NavSection }[] = [
   { path: '/', label: 'home', icon: ListTodo, tables: ['jira'] },
-  { path: '/prs', label: 'my PRs', icon: GitPullRequest, tables: ['mine'] },
-  { path: '/reviews', label: 'reviews', icon: Eye, tables: ['review', 'team'] },
-  { path: '/workspaces', label: 'workspaces', icon: FolderGit2, tables: ['workspaces'] },
-  { path: '/mail', label: 'mail', icon: Mail, tables: [] },
-  { path: '/usage', label: 'usage', icon: Gauge, tables: [] },
-  { path: '/config', label: 'config', icon: Settings, tables: [] },
+  { path: '/prs', label: 'my PRs', icon: GitPullRequest, tables: ['mine'], nav: 'prs' },
+  { path: '/reviews', label: 'reviews', icon: Eye, tables: ['review', 'team'], nav: 'prs' },
+  { path: '/mail', label: 'mail', icon: Mail, tables: [], nav: 'tools' },
+  { path: '/workspaces', label: 'workspaces', icon: FolderGit2, tables: ['workspaces'], nav: 'tools' },
+  { path: '/usage', label: 'usage', icon: Gauge, tables: [], nav: 'footer' },
+  { path: '/config', label: 'config', icon: Settings, tables: [], nav: 'footer' },
 ]
 
 export const TITLES: Record<string, string> = {

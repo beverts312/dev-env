@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -213,6 +214,47 @@ def pr_states(names: list[tuple[str, int]]) -> tuple[list[dict], list[str]]:
         else:
             rows.append(pr_from_node(node))
     return rows, merged
+
+
+# GitHub search allows at most five OR operators, so each search names this many issue keys
+KEYS_PER_SEARCH = 6
+
+ISSUE_PR_FIELDS = "... on PullRequest { ...PrFields headRefName body }"
+
+
+def issue_prs(keys: list[str], org: str | None = None) -> dict[str, list[dict]]:
+    """The open PRs naming each issue key in their title, branch or body, by key, in one request;
+    org, when given, limits the search to it. A PR naming several keys is under each."""
+    if not keys:
+        return {}
+    scope = f" org:{org}" if org else ""
+    chunks = [keys[i : i + KEYS_PER_SEARCH] for i in range(0, len(keys), KEYS_PER_SEARCH)]
+    fields = []
+    for i, chunk in enumerate(chunks):
+        terms = " OR ".join(f'"{key}"' for key in chunk)
+        q = f"is:pr is:open archived:false{scope} {terms} in:title,body"
+        fields.append(f"s{i}: search(query: {json.dumps(q)}, type: ISSUE, first: 50) {{ nodes {{ {ISSUE_PR_FIELDS} }} }}")
+    query = "query {\n" + "\n".join(fields) + "\n}\n" + PR_FIELDS
+    result = run_gh("api", "graphql", "-f", f"query={query}")
+    if result.returncode != 0:
+        raise click.ClickException(f"gh api graphql failed: {result.stderr.strip()}")
+    try:
+        data = json.loads(result.stdout)["data"]
+        nodes = [node for i in range(len(chunks)) for node in data[f"s{i}"]["nodes"] if node]
+    except (json.JSONDecodeError, KeyError, TypeError):
+        raise click.ClickException("gh returned unreadable search results") from None
+    # search matches ADC-12 in ADC-123 too, so match each key as a whole word
+    patterns = {key: re.compile(rf"\b{re.escape(key)}\b", re.IGNORECASE) for key in keys}
+    found: dict[str, dict[str, dict]] = {}
+    for node in nodes:
+        text = f"{node.get('title') or ''} {node.get('headRefName') or ''} {node.get('body') or ''}"
+        row = pr_from_node(node)
+        for key, pattern in patterns.items():
+            if pattern.search(text):
+                found.setdefault(key, {})[f"{row['repo']}#{row['number']}"] = row
+    return {
+        key: sorted(rows.values(), key=lambda pr: (pr["repo"], pr["number"])) for key, rows in found.items()
+    }
 
 
 def gh(*args: str) -> str:

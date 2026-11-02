@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ChevronRight, Code, FolderOpen, FolderPlus, Play, Plus } from 'lucide-react'
+import { ChevronRight, Code, FolderOpen, FolderPlus, GitPullRequest, GitPullRequestDraft, Play, Plus } from 'lucide-react'
 
 import { CloudIssueDialog } from '@/components/CloudIssueDialog'
 import { MultiFilter } from '@/components/MultiFilter'
@@ -9,8 +9,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useAction, useTable } from '@/hooks/queries'
-import { api, type Issue } from '@/lib/api'
-import { countTree, filterTree, useTreePicks, type ShownIssue } from '@/lib/filters'
+import { api, prName, type Issue, type Pr } from '@/lib/api'
+import { CHECK_STYLES, countTree, filterTree, useTreePicks, type ShownIssue } from '@/lib/filters'
 import { usePersistent } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
@@ -20,7 +20,7 @@ const STATUS_STYLES: Record<string, string> = {
   done: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
 }
 
-// The Jira issues assigned to you, as `jira ls` nests them. Opening an issue opens its workspace,
+// The Jira issues assigned to you, as `jira ls` nests them, each with its open PRs under it. Opening an issue opens its workspace,
 // or offers to create one or link one; an issue with a workspace can open it in VS Code too. Your To Do issues with a
 // workspace can also start work: a new pane there running claude in plan mode on the issue. New cloud issue asks for a
 // description and runs claude's /cloud-issue on it
@@ -66,6 +66,10 @@ export function IssueTree() {
       <label className="flex items-center gap-2 text-xs text-muted-foreground">
         <Checkbox checked={!!picks.mine} onCheckedChange={(on) => setPicks({ ...picks, mine: on === true })} />
         assigned to me
+      </label>
+      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Checkbox checked={!!picks.noPrs} onCheckedChange={(on) => setPicks({ ...picks, noPrs: on === true })} />
+        hide PRs
       </label>
     </>
   )
@@ -142,11 +146,12 @@ function IssueNode({
 }) {
   const { issue, context, children } = node
   const isOpen = !closed.includes(issue.key)
+  const nested = children.length > 0 || issue.prs.length > 0
   const top = depth === 0
   const startable = issue.mine && issue.category === 'new' && !!issue.workspace
   const reveal = 'shrink-0 opacity-0 group-hover:opacity-100 group-data-[selected=true]:opacity-100 focus-visible:opacity-100'
   return (
-    <li role="treeitem" aria-expanded={children.length ? isOpen : undefined}>
+    <li role="treeitem" aria-expanded={nested ? isOpen : undefined}>
       <div
         data-nav-row
         data-key={issue.key}
@@ -162,7 +167,7 @@ function IssueNode({
         )}
         style={{ paddingLeft: `${0.75 + depth * 1.25}rem` }}
       >
-        {children.length ? (
+        {nested ? (
           <Button
             variant="ghost"
             size="icon-xs"
@@ -223,7 +228,7 @@ function IssueNode({
           {issue.workspace ? 'open workspace' : 'new workspace'}
         </Button>
       </div>
-      {children.length > 0 && isOpen && (
+      {nested && isOpen && (
         <ul role="group">
           {children.map((child) => (
             <IssueNode
@@ -238,8 +243,51 @@ function IssueNode({
               parentKey={issue.key}
             />
           ))}
+          {issue.prs.map((pr) => (
+            <PrLeaf key={prName(pr)} pr={pr} depth={depth + 1} dim={context} parentKey={issue.key} />
+          ))}
         </ul>
       )}
+    </li>
+  )
+}
+
+// an open PR under the issue its title, branch or body names
+function PrLeaf({ pr, depth, dim, parentKey }: { pr: Pr; depth: number; dim: boolean; parentKey: string }) {
+  const Icon = pr.draft ? GitPullRequestDraft : GitPullRequest
+  return (
+    <li role="treeitem">
+      <div
+        data-nav-row
+        data-parent-key={parentKey}
+        className={cn('flex min-w-0 items-center gap-2 py-1 pr-3 hover:bg-muted/50', dim && 'opacity-50')}
+        style={{ paddingLeft: `${0.75 + depth * 1.25}rem` }}
+      >
+        <span className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
+          <Icon className="size-3.5" />
+        </span>
+        <a
+          data-nav-link
+          href={pr.url}
+          target="_blank"
+          rel="noreferrer"
+          className="shrink-0 font-mono text-xs text-primary hover:underline"
+        >
+          {prName(pr)}
+        </a>
+        <Badge variant="secondary" className={cn('shrink-0', CHECK_STYLES[pr.checks])}>
+          {pr.checks}
+        </Badge>
+        {pr.draft && (
+          <Badge variant="outline" className="shrink-0">
+            draft
+          </Badge>
+        )}
+        <span className="truncate">{pr.title}</span>
+        <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+          {pr.approvals} approval{pr.approvals === 1 ? '' : 's'} · {pr.author}
+        </span>
+      </div>
     </li>
   )
 }

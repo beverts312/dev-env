@@ -432,3 +432,37 @@ def test_pr_states_raises_without_data(monkeypatch):
     monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(cmd, 1, stdout="", stderr="bad creds"))
     with pytest.raises(click.ClickException, match="bad creds"):
         github.pr_states([("a/b", 1)])
+
+
+def test_issue_prs(monkeypatch):
+    def pr_node(number, title, branch="", body=""):
+        return {"number": number, "title": title, "headRefName": branch, "body": body, "repository": {"nameWithOwner": "a/b"}, "commits": {"nodes": []}}
+
+    calls = []
+    out = json.dumps({"data": {
+        "s0": {"nodes": [pr_node(1, "fix: thing [ADC-12]"), pr_node(2, "ADC-123 only"), None]},
+        # found by branch, by body, and one naming two keys
+        "s1": {"nodes": [pr_node(3, "x", branch="feat/adc-7-thing"), pr_node(4, "y", body="Closes ADC-7 and ADC-12")]},
+    }})
+
+    def run(cmd, **kw):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    keys = ["ADC-12", "ADC-1", "ADC-2", "ADC-3", "ADC-4", "ADC-5", "ADC-7"]
+    found = github.issue_prs(keys, "acme")
+    # ADC-12 isn't ADC-123's
+    assert {k: [p["number"] for p in v] for k, v in found.items()} == {"ADC-12": [1, 4], "ADC-7": [3, 4]}
+    # six keys a search, both in one request
+    assert len(calls) == 1
+    query = calls[0][-1]
+    assert 'org:acme \\"ADC-12\\" OR \\"ADC-1\\" OR' in query and '\\"ADC-5\\" in:title,body' in query
+    assert 's1: search(query: "is:pr is:open archived:false org:acme \\"ADC-7\\" in:title,body"' in query
+    assert github.issue_prs([]) == {} and len(calls) == 1
+
+
+def test_issue_prs_raises_on_failure(monkeypatch):
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(cmd, 1, stdout="", stderr="bad creds"))
+    with pytest.raises(click.ClickException, match="bad creds"):
+        github.issue_prs(["ADC-1"])

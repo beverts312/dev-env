@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 import be.server
-from be import claude_sessions, cmux, config, jira, skill_pages
+from be import claude_sessions, cmux, config, github, jira, skill_pages
 from be.commands import pr, ws
 from be.server import api, app, views
 
@@ -47,6 +47,7 @@ def serve(monkeypatch, tmp_path):
     monkeypatch.setattr(pr, "team_review_requests", lambda: fetched.append("team") or PRS[:2])
     monkeypatch.setattr(pr, "authored_prs", lambda: fetched.append("mine") or [dict(p) for p in PRS[:3]])
     monkeypatch.setattr(jira, "issue_tree", lambda: fetched.append("jira") or [])
+    monkeypatch.setattr(github, "issue_prs", lambda keys, org=None: {})
     reviews = []
     monkeypatch.setattr(pr, "open_review", lambda *args: reviews.append(args))
     # every flag given, as the parent is
@@ -135,6 +136,42 @@ def test_issue_tree(serve, monkeypatch):
     # the filters offer each project, described as jira.projects has it, and each status, To Do first
     assert data["projects"] == [{"key": "ACME", "note": ""}, {"key": "OPS", "note": "Operations"}]
     assert data["statuses"] == ["To Do", "In Progress"]
+
+
+def test_issue_tree_prs(serve, monkeypatch):
+    c, _, _, _ = serve
+    monkeypatch.setenv("JIRA_URL", "https://x.atlassian.net")
+    monkeypatch.setenv("WORK_ORG", "acme")
+    asked = []
+
+    def issue_prs(keys, org=None):
+        asked.append((keys, org))
+        return {"ACME-12": [PRS[0]], "ACME-20": [PRS[2]]}
+
+    monkeypatch.setattr(github, "issue_prs", issue_prs)
+    monkeypatch.setattr(jira, "issue_tree", lambda: [dict(i, children=[dict(c) for c in i["children"]]) for i in ISSUES])
+    rows = table(c, "jira")["rows"]
+    # every issue in the tree is searched for at once, in the work org
+    assert asked == [(["ACME-1", "ACME-12", "ACME-13", "ACME-20"], "acme")]
+    assert rows[0]["prs"] == []
+    bug = rows[0]["children"][0]
+    assert [p["number"] for p in bug["prs"]] == [7]
+    assert bug["prs"][0]["url"] == "https://github.com/acme/api/pull/7" and "merge_flag" not in bug["prs"][0]
+    assert rows[1]["prs"][0]["draft"] is True
+
+
+def test_issue_tree_survives_pr_failure(serve, monkeypatch, caplog):
+    c, _, _, _ = serve
+    monkeypatch.setenv("JIRA_URL", "https://x.atlassian.net")
+
+    def fail(keys, org=None):
+        raise click.ClickException("gh not found")
+
+    monkeypatch.setattr(github, "issue_prs", fail)
+    monkeypatch.setattr(jira, "issue_tree", lambda: [node("ACME-20", "Story", "Later")])
+    data = table(c, "jira")
+    assert data["error"] is None and data["rows"][0]["prs"] == []
+    assert "gh not found" in caplog.text
 
 
 def test_issue_workspaces(serve, tmp_path, monkeypatch):

@@ -34,6 +34,13 @@ describe('prShown', () => {
     expect(prShown(pr({}), { ...PR_DEFAULTS, search: 'web' }, false)).toBe(false)
   })
 
+  it('shows only the picked authors, or everyone when none are', () => {
+    expect(prShown(pr({}), { ...PR_DEFAULTS, authors: [] }, false)).toBe(true)
+    expect(prShown(pr({}), { ...PR_DEFAULTS, authors: ['dev', 'ops'] }, false)).toBe(true)
+    expect(prShown(pr({}), { ...PR_DEFAULTS, authors: ['ops'] }, false)).toBe(false)
+    expect(toggleAll(toggleAll({ ...PR_DEFAULTS, authors: ['ops'] })).authors).toEqual(['ops'])
+  })
+
   it('toggles every filter off, then back to the defaults, keeping the search', () => {
     const off = toggleAll({ ...PR_DEFAULTS, search: 'x' })
     expect(off).toEqual({ checks: 'all', draft: 'all', renovate: false, search: 'x' })
@@ -57,6 +64,7 @@ const issue = (key: string, over: Partial<Issue> = {}, children: Issue[] = []): 
   project: key.split('-')[0],
   workspace: '',
   parent_offer: false,
+  prs: [],
   children,
   ...over,
 })

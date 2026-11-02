@@ -6,7 +6,7 @@ import logging
 
 import click
 
-from be import config, jira
+from be import config, github, jira
 from be.commands import pr, ws
 from be.commands.jira import TOP_LEVEL
 from be.github import same_login
@@ -65,6 +65,7 @@ def fetch_table(table: str) -> list[dict] | str:
     try:
         if table == "jira":
             rows = jira.issue_tree()
+            attach_prs(rows)
         elif table == "workspaces":
             rows = workspace_rows()
         else:
@@ -78,6 +79,20 @@ def fetch_table(table: str) -> list[dict] | str:
         return rows
     log.warning("fetching %s failed: %s", table, message)
     return message
+
+
+def attach_prs(issues: list[dict]) -> None:
+    """Set each issue's "prs" to the open PRs naming its key; a GitHub failure leaves them empty, so
+    the tree still shows."""
+    nodes = tree_issues(issues)
+    try:
+        org, _ = config.resolve("work_org")
+        found = github.issue_prs([issue["key"] for issue in nodes], org or None)
+    except click.ClickException as e:
+        log.warning("finding the issues' PRs failed: %s", e.format_message())
+        found = {}
+    for issue in nodes:
+        issue["prs"] = found.get(issue["key"], [])
 
 
 def pr_row(p: dict, mine: bool) -> dict:
@@ -138,6 +153,7 @@ def issue_node(issue: dict, workspaces: dict[str, str]) -> dict:
         "project": issue_project(issue),
         "workspace": issue_workspace(issue, workspaces),
         "parent_offer": issue["type"] not in TOP_LEVEL and issue["parent_type"] in TOP_LEVEL,
+        "prs": [pr_row(p, False) for p in issue.get("prs", [])],
         "children": [issue_node(child, workspaces) for child in issue["children"]],
     }
 

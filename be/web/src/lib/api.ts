@@ -39,6 +39,8 @@ export type Issue = {
   workspace: string
   // whether a new workspace could be for its Feature or Epic parent instead
   parent_offer: boolean
+  // the open PRs naming its key in their title, branch or body
+  prs: Pr[]
   children: Issue[]
 }
 

@@ -1,10 +1,11 @@
 import asyncio
+import logging
 
 from fastapi.testclient import TestClient
 from mcp.server.mcpserver.exceptions import ToolError
 import pytest
 
-from be import todo
+from be import config, todo
 from be.server import app, mcp
 
 HEADERS = {"Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2025-06-18"}
@@ -55,11 +56,62 @@ def test_tool_errors(root):
             call(server, name, **args)
 
 
+def test_config_tools(isolated_config, monkeypatch):
+    server = mcp.build()
+    assert result(server, "set_config", key="git.name", value="Me") == {"result": "saved git.name"}
+    assert result(server, "set_config", key="jira.projects.ADC", value="Ads")["result"] == "saved jira.projects.ADC"
+    result(server, "set_config", key="jira.token", value="hunter2")
+    assert config.file_value("jira.projects") == {"ADC": "Ads"}
+    assert result(server, "get_config", key="git.name") == {"key": "git.name", "value": "Me", "source": "file"}
+    assert result(server, "get_config", key="jira.projects.ADC")["value"] == "Ads"
+    assert result(server, "get_config", key="jira.token")["value"] == "********"
+    listed = result(server, "list_config")
+    assert listed["path"] == str(isolated_config)
+    rows = {r["key"]: r for r in listed["settings"]}
+    assert rows["server.log_level"]["choices"] == ["debug", "info", "warning", "error"]
+    assert (rows["todo.dir"]["value"], rows["todo.dir"]["source"]) == ("~/notes/todos", "default")
+    assert rows["jira.token"]["value"] == "********" and rows["pages"]["fields"][0] == "skill"
+    monkeypatch.setenv("GIT_NAME", "Env")
+    assert "GIT_NAME is set and overrides it" in result(server, "set_config", key="git.name", value="Me")["result"]
+    assert result(server, "unset_config", key="git.name") == {"result": "removed git.name"}
+    assert result(server, "set_config", key="jira.projects.ADC", value="") == {"result": "removed jira.projects.ADC"}
+    assert config.file_value("git.name") is None and config.file_value("jira.projects") is None
+
+
+def test_config_tool_errors(isolated_config):
+    server = mcp.build()
+    for name, args, message in (
+        ("get_config", {"key": "nope"}, "unknown key 'nope'"),
+        ("set_config", {"key": "nope", "value": "x"}, "unknown key 'nope'"),
+        ("set_config", {"key": "server.log_level", "value": "loud"}, "must be one of debug"),
+        ("set_config", {"key": "pages.mail.nope", "value": "x"}, "unknown field 'nope'"),
+        ("unset_config", {"key": "nope"}, "unknown key 'nope'"),
+    ):
+        with pytest.raises(ToolError, match=message):
+            call(server, name, **args)
+
+
+def test_set_log_level_applies(isolated_config):
+    logger = logging.getLogger("be")
+    before = logger.level
+    try:
+        call(mcp.build(app.State()), "set_config", key="server.log_level", value="debug")
+        assert logger.level == logging.DEBUG
+        logger.setLevel(logging.WARNING)
+        # --log-level was given, so the saved one waits for a restart
+        call(mcp.build(app.State(fixed=("server.log_level",))), "set_config", key="server.log_level", value="info")
+        assert logger.level == logging.WARNING
+    finally:
+        logger.setLevel(before)
+
+
 def test_tool_annotations():
     tools = {t.name: t for t in asyncio.run(mcp.build().list_tools())}
     assert tools["list_todos"].annotations.read_only_hint
     assert tools["delete_todo"].annotations.destructive_hint
     assert not tools["complete_todo"].annotations.destructive_hint
+    assert tools["get_config"].annotations.read_only_hint
+    assert tools["unset_config"].annotations.destructive_hint
 
 
 def test_served_at_mcp(root):

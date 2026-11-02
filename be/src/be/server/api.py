@@ -725,19 +725,23 @@ class Value(BaseModel):
     name: str = ""
 
 
-def saved(request: Request, key: str, value: str, name: str, unset: bool) -> dict:
-    s = state(request)
+def save_setting(s: State, key: str, value: str, name: str = "", unset: bool = False) -> str:
+    """views.save_setting, then apply a saved log level now; raises SettingError when it can't save."""
     with s.lock:
-        try:
-            message = views.save_setting(key, value, name, unset)
-        except SettingError as e:
-            raise ActionFailed(str(e)) from e
+        message = views.save_setting(key, value, name, unset)
         if "server.log_level" not in s.fixed:
             # a saved log level applies now, unless its env var still wins
             level, _ = config.resolve("server.log_level")
             if str(level).lower() in LOG_LEVELS:
                 logging.getLogger("be").setLevel(str(level).upper())
-    return {"message": message}
+    return message
+
+
+def saved(request: Request, key: str, value: str, name: str, unset: bool) -> dict:
+    try:
+        return {"message": save_setting(state(request), key, value, name, unset)}
+    except SettingError as e:
+        raise ActionFailed(str(e)) from e
 
 
 @router.put("/config/{key}")

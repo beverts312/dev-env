@@ -29,7 +29,7 @@ def fake_cmux(monkeypatch):
             out = json.dumps({"workspaces": WORKSPACES[args[4]]})
         else:
             out = ""
-        code = 1 if args[1] in failing else 0
+        code = 1 if args[1] in failing or " ".join(args[1:3]) in failing else 0
         return subprocess.CompletedProcess(args, code, out, "boom\n" if code else "")
 
     monkeypatch.setattr(subprocess, "run", run)
@@ -47,10 +47,10 @@ def test_focus_existing_selects_the_workspace(fake_cmux, monkeypatch):
     calls, _ = fake_cmux
     monkeypatch.setenv("CMUX_WORKSPACE_ID", "x")
     assert cmux.focus_existing("cmux", "Fix login") is True
-    switched = [c for c in calls if c[1:2] != ["workspace"]]
+    switched = [c for c in calls if c[1:3] != ["workspace", "list"]]
     assert switched == [
         ["cmux", "focus-window", "--window", "w2"],
-        ["cmux", "select-workspace", "--workspace", "b", "--window", "w2"],
+        ["cmux", "workspace", "select", "--workspace", "b", "--window", "w2"],
     ]
 
 
@@ -69,7 +69,7 @@ def test_focus_existing_none_open(fake_cmux):
 
 def test_show_workspace_reports_failure(fake_cmux):
     _, failing = fake_cmux
-    failing.add("select-workspace")
+    failing.add("workspace select")
     with pytest.raises(click.ClickException, match="could not switch"):
         cmux.show_workspace("cmux", "w2", "b")
 

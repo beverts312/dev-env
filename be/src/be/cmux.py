@@ -64,9 +64,9 @@ def start() -> str:
 
 
 def new_workspace(cmux: str, args: list[str]) -> str:
-    """Run `cmux new-workspace` with args, echo its output, and return stdout."""
+    """Run `cmux workspace create` with args, echo its output, and return stdout."""
     created = subprocess.run(
-        [cmux, "new-workspace", *args], capture_output=True, text=True
+        [cmux, "workspace", "create", *args], capture_output=True, text=True
     )
     sys.stdout.write(created.stdout)
     sys.stderr.write(created.stderr)
@@ -139,7 +139,7 @@ def show_workspace(cmux: str, window: str, workspace: str) -> None:
     """Bring window to the front with workspace selected in it."""
     for args in (
         ["focus-window", "--window", window],
-        ["select-workspace", "--workspace", workspace, "--window", window],
+        ["workspace", "select", "--workspace", workspace, "--window", window],
     ):
         result = subprocess.run([cmux, *args], capture_output=True, text=True)
         if result.returncode != 0:

@@ -28,17 +28,18 @@ def create_app(state: State | None = None, static: Path | None = STATIC, host: s
     """static is the built web app to serve, or None to serve only the API (as with --dev, where Vite
     serves the app); host is the address the server listens on, which /mcp checks requests' Host against
     when it's local."""
-    todos = mcp.build()
+    state = state or State()
+    tools = mcp.build(state)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        async with todos.session_manager.run():
+        async with tools.session_manager.run():
             yield
 
     app = FastAPI(
         title="be", docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None, lifespan=lifespan
     )
-    app.state.be = state or State()
+    app.state.be = state
 
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
@@ -73,7 +74,7 @@ def create_app(state: State | None = None, static: Path | None = STATIC, host: s
 
     app.include_router(router)
     # before the web app's catch-all route, which would otherwise answer /mcp
-    app.router.routes.extend(mcp.routes(todos, host))
+    app.router.routes.extend(mcp.routes(tools, host))
 
     if static is not None:
 

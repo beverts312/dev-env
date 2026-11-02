@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { Keyboard, Moon, NotebookPen, Settings2, Sun, type LucideIcon } from 'lucide-react'
+import { ChevronsLeft, ChevronsRight, Keyboard, Moon, NotebookPen, Settings2, Sun, type LucideIcon } from 'lucide-react'
 import { DynamicIcon, iconNames, type IconName } from 'lucide-react/dynamic'
 import { useTheme } from 'next-themes'
 import { NavLink, Outlet, useLocation } from 'react-router'
@@ -22,13 +22,15 @@ import {
   SidebarMenuItem,
   SidebarProvider,
   SidebarRail,
+  SidebarSeparator,
   SidebarTrigger,
+  useSidebar,
 } from '@/components/ui/sidebar'
 import { useAction, useMeta, useTable } from '@/hooks/queries'
 import { useKeyboardNav } from '@/hooks/useKeyboardNav'
 import { api, type PrTableId } from '@/lib/api'
 import { countTree, filterTree, prShown, usePrFilters, useTreePicks } from '@/lib/filters'
-import { KEYS, PAGES, type CountId } from '@/lib/pages'
+import { KEYS, PAGES, type CountId, type NavSection } from '@/lib/pages'
 import { usePersistent } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
@@ -45,6 +47,8 @@ export function Layout() {
   const page = [...PAGES, ...skillPages].find((p) => p.path === pathname)
   const notes = useAction(api.openNotes)
   const configs = useAction(api.openConfigs)
+  const navItems = (section: NavSection) =>
+    PAGES.filter((p) => p.nav === section).map((p) => <NavItem key={p.path} page={p} active={pathname === p.path} />)
 
   return (
     <SidebarProvider open={open} onOpenChange={setOpen}>
@@ -57,33 +61,34 @@ export function Layout() {
             <span className="truncate text-sm font-medium group-data-[collapsible=icon]:hidden">dev env</span>
           </NavLink>
         </SidebarHeader>
-        <SidebarContent>
-          <SidebarGroup>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {PAGES.filter((p) => p.path !== '/' && p.tables.length).map((p) => (
-                  <NavItem key={p.path} page={p} active={pathname === p.path} />
-                ))}
+        <SidebarContent className="gap-0">
+          <NavGroup>{navItems('prs')}</NavGroup>
+          <SidebarSeparator />
+          <NavGroup>{navItems('tools')}</NavGroup>
+          {!!skillPages.length && (
+            <>
+              <SidebarSeparator />
+              <NavGroup>
                 {skillPages.map((p) => (
                   <NavItem key={p.path} page={p} active={pathname === p.path} />
                 ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
+              </NavGroup>
+            </>
+          )}
         </SidebarContent>
         <SidebarFooter>
           <SidebarMenu>
-            {PAGES.filter((p) => !p.tables.length).map((p) => (
-              <NavItem key={p.path} page={p} active={pathname === p.path} />
-            ))}
+            {navItems('footer')}
+            <CollapseItem />
           </SidebarMenu>
         </SidebarFooter>
         <SidebarRail />
       </Sidebar>
       <SidebarInset>
         <header className="sticky top-0 z-10 flex h-12 items-center gap-2 border-b bg-background/80 px-3 backdrop-blur">
-          <SidebarTrigger />
-          <Separator orientation="vertical" className="h-4" />
+          {/* on desktop the sidebar's footer arrow toggles it; a phone's sidebar is a sheet, so it needs this */}
+          <SidebarTrigger className="md:hidden" />
+          <Separator orientation="vertical" className="h-4 md:hidden" />
           <h1 className="text-sm font-medium">{page?.label ?? 'not found'}</h1>
           <div className="ml-auto flex items-center gap-1">
             <Button variant="ghost" size="sm" onClick={() => notes.mutate([])} className="text-muted-foreground">
@@ -136,6 +141,29 @@ export function Layout() {
         </DialogContent>
       </Dialog>
     </SidebarProvider>
+  )
+}
+
+function NavGroup({ children }: { children: React.ReactNode }) {
+  return (
+    <SidebarGroup>
+      <SidebarGroupContent>
+        <SidebarMenu>{children}</SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
+  )
+}
+
+function CollapseItem() {
+  const { state, toggleSidebar } = useSidebar()
+  const label = state === 'expanded' ? 'collapse' : 'expand'
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton onClick={toggleSidebar} tooltip={label} className="text-muted-foreground">
+        {state === 'expanded' ? <ChevronsLeft /> : <ChevronsRight />}
+        <span>{label}</span>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
   )
 }
 

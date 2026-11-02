@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 
 import { BulkBar } from '@/components/BulkBar'
 import { ConfirmButton } from '@/components/ConfirmButton'
+import { MultiFilter } from '@/components/MultiFilter'
 import { SectionState, TableSection } from '@/components/TableSection'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -14,14 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { tableKey, useAction, useAgent, useStarred, useStarredTable, useTable } from '@/hooks/queries'
 import { ACTION_LABELS, api, prName, type MineAction, type Pr, type PrTableId, type PrViewId } from '@/lib/api'
-import { ALL, CHECKS, DRAFT, filtersOn, prShown, toggleAll, usePrFilters } from '@/lib/filters'
+import { ALL, CHECK_STYLES, CHECKS, DRAFT, filtersOn, prShown, toggleAll, usePrFilters } from '@/lib/filters'
 import { cn } from '@/lib/utils'
-
-const CHECK_STYLES: Record<string, string> = {
-  pass: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
-  fail: 'bg-red-500/15 text-red-600 dark:text-red-400',
-  pending: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
-}
 
 // What a PR table draws from: the server's table, or the starred PRs
 type PrSource = {
@@ -70,6 +65,12 @@ function PrTableView({ table, title, data }: { table: PrViewId; title: string; d
 
   const rows = data.rows
   const shown = useMemo(() => (rows ?? []).filter((p) => prShown(p, filters, mine)), [rows, filters, mine])
+  // every author in the table, noting how many PRs each has
+  const authors = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const p of rows ?? []) counts.set(p.author, (counts.get(p.author) ?? 0) + 1)
+    return [...counts].sort(([a], [b]) => a.localeCompare(b)).map(([value, n]) => ({ value, note: String(n) }))
+  }, [rows])
   // a hidden row is never acted on in bulk
   const pickedShown = shown.filter((p) => picked.has(prName(p)))
   const setPick = (p: Pr, on: boolean) =>
@@ -101,6 +102,14 @@ function PrTableView({ table, title, data }: { table: PrViewId; title: string; d
     <>
       <FilterSelect label="checks" value={filters.checks} options={CHECKS} onChange={(checks) => setFilters({ ...filters, checks })} />
       <FilterSelect label="draft" value={filters.draft} options={DRAFT} onChange={(draft) => setFilters({ ...filters, draft })} />
+      {!mine && (
+        <MultiFilter
+          label="author"
+          options={authors}
+          picked={filters.authors ?? []}
+          onChange={(picked) => setFilters({ ...filters, authors: picked })}
+        />
+      )}
       {!mine && (
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
           <Checkbox checked={filters.renovate} onCheckedChange={(on) => setFilters({ ...filters, renovate: on === true })} />

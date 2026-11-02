@@ -113,7 +113,11 @@ and notes (or delete it). Its Jira key links to the issue when `jira.url` is set
 
 `be server` also serves an [MCP](https://modelcontextprotocol.io) server at `/mcp` (streamable
 HTTP, stateless) with tools for the same todos: `list_todos`, `get_todo`, `add_todo`,
-`update_todo`, `complete_todo`, `reopen_todo`, and `delete_todo`. Add it to Claude Code with:
+`update_todo`, `complete_todo`, `reopen_todo`, and `delete_todo`, and for the config file, as
+`be config` and the config page do: `list_config` (every setting with its help, effective value, and
+source), `get_config`, `set_config` (an empty value removes the key), and `unset_config`. Secrets such
+as `jira.token` are masked. Saving `server.log_level` applies at once, as on the config page. Add it to
+Claude Code with:
 
 ```bash
 claude mcp add --transport http be http://127.0.0.1:8765/mcp
