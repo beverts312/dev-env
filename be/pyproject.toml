@@ -42,6 +42,8 @@ artifacts = ["src/be/server/static/**"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# tests import helpers from each other (`from tests.test_gcal import ...`)
+pythonpath = ["."]
 filterwarnings = [
     # starlette's TestClient asks for httpx2 now, but httpx still works
     "ignore:Using `httpx` with `starlette.testclient` is deprecated",

@@ -54,6 +54,15 @@ checkPidTraffic() {
 alias flushdns='be dns flush-local'
 
 alias ag='agy-ide'
+
+# dev container (docker-compose.yml in this repo; works from any directory)
+# devc starts Claude with the current directory as the workspace. Args are `docker compose run`
+# flags, e.g. `devc --service-ports` to publish be's ports, `devc --entrypoint zsh` for a shell
+devc() {
+  WORKSPACE_DIR="$PWD" WORKSPACE_NAME="${PWD##*/}" \
+    docker compose -f "$DEV_ENV_HOME/docker-compose.yml" run --rm "$@" dev
+}
+alias devcb='docker compose -f "$DEV_ENV_HOME/docker-compose.yml" build'                         # Build the dev container image
 ezgource() {
   name=$(printf '%s\n' "${PWD##*/}")-$(date +%s).mp4
   res=1920x1080

@@ -1,0 +1,44 @@
+# The dev container without VS Code: `docker compose run --rm dev` starts
+# .devcontainer/entrypoint.sh (Claude Code). Settings come from .env (copy .env.example).
+#
+# The workspace is WORKSPACE_DIR, mounted at /workspaces/WORKSPACE_NAME; both default to this
+# repo. The `devc` alias in .bash_profile sets them to the current directory. This repo is also
+# always mounted at /opt/dev-env, for the entrypoint and post-create scripts.
+services:
+  dev:
+    build:
+      context: .devcontainer
+      args:
+        # match the host user so files in mounted dirs (workspace, ~/.ssh, ~/.claude) are owned correctly
+        USER_UID: ${USER_UID:-1000}
+        USER_GID: ${USER_GID:-1000}
+    image: dev-env:latest
+    hostname: dev-env
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DEV_ENV_HOME: /opt/dev-env
+    # read from the mounted repo, so edits take effect without a rebuild
+    entrypoint: /opt/dev-env/.devcontainer/entrypoint.sh
+    stdin_open: true
+    tty: true
+    init: true
+    working_dir: /workspaces/${WORKSPACE_NAME:-dev-env}
+    # published only with `docker compose run --service-ports`
+    ports:
+      - "127.0.0.1:8765:8765" # be server (run with --host 0.0.0.0)
+      - "127.0.0.1:5173:5173" # vite dev server (run with --host)
+    volumes:
+      - ${WORKSPACE_DIR:-.}:/workspaces/${WORKSPACE_NAME:-dev-env}
+      - .:/opt/dev-env
+      - node-modules:/opt/dev-env/be/web/node_modules
+      - ${CLAUDE_DIR:-~/.claude}:/home/dev/.claude
+      - ${SSH_DIR:-~/.ssh}:/home/dev/.ssh:ro
+      - ${KUBE_DIR:-~/.kube}:/home/dev/.kube
+      - ${AWS_DIR:-~/.aws}:/home/dev/.aws
+      - ${GH_CONFIG_DIR:-~/.config/gh}:/home/dev/.config/gh
+      - ${GCLOUD_DIR:-~/.config/gcloud}:/home/dev/.config/gcloud
+
+volumes:
+  node-modules:

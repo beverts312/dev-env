@@ -1,0 +1,45 @@
+{
+  "name": "dev-env",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "remoteUser": "dev",
+  "updateRemoteUserUID": true,
+  "workspaceFolder": "/workspaces/dev-env",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/dev-env,type=bind",
+  // The host config dirs below are bind-mounted, and a bind mount fails if its source is missing
+  "initializeCommand": "mkdir -p \"$HOME/.kube\" \"$HOME/.aws\" \"$HOME/.config/gh\" \"$HOME/.config/gcloud\"",
+  "mounts": [
+    "source=dev-env-claude,target=/home/dev/.claude,type=volume",
+    "source=dev-env-node-modules,target=/workspaces/dev-env/be/web/node_modules,type=volume",
+    "source=${localEnv:HOME}/.kube,target=/home/dev/.kube,type=bind",
+    "source=${localEnv:HOME}/.aws,target=/home/dev/.aws,type=bind",
+    "source=${localEnv:HOME}/.config/gh,target=/home/dev/.config/gh,type=bind",
+    "source=${localEnv:HOME}/.config/gcloud,target=/home/dev/.config/gcloud,type=bind"
+  ],
+  "containerEnv": {
+    "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY}",
+    "GH_TOKEN": "${localEnv:GH_TOKEN}"
+  },
+  "forwardPorts": [8765, 5173],
+  "portsAttributes": {
+    "8765": { "label": "be server" },
+    "5173": { "label": "be web (vite dev)" }
+  },
+  "postCreateCommand": ".devcontainer/post-create.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "anthropic.claude-code",
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "oxc.oxc-vscode",
+        "bradlc.vscode-tailwindcss"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/home/dev/.venvs/be/bin/python",
+        "terminal.integrated.defaultProfile.linux": "zsh"
+      }
+    }
+  }
+}
