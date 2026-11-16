@@ -17,7 +17,7 @@ builds the web app, and puts `be` on `PATH`. Then:
 - `be server --host 0.0.0.0`: the server listens on 127.0.0.1 by default, which isn't reachable
   through the forwarded port (8765)
 - `pnpm -C be/web dev --host`: the Vite dev server (5173)
-- `cd be && uv run python -m pytest`: use `python -m` so `tests` is importable
+- `cd be && uv run pytest`: the tests
 - `claude`: log in once; its config is kept in the `dev-env-claude` volume across rebuilds
 
 The host's `~/.kube`, `~/.aws`, `~/.config/gh`, and `~/.config/gcloud` are mounted into the
