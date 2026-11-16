@@ -38,21 +38,27 @@ variable in `.env` is also set in the container, so `GH_TOKEN` and `ANTHROPIC_AP
 cp .env.example .env
 ```
 
+`.bash_profile` has two shortcuts that work from any directory:
+
+- `devcb`: build the image (`docker compose build`)
+- `devc`: start Claude in the container with the **current directory** as the workspace, mounted
+  at `/workspaces/<directory name>`. Its arguments are `docker compose run` flags:
+  `devc --service-ports` publishes ports 8765 and 5173 (on 127.0.0.1) for `be server` and Vite,
+  and `devc --entrypoint zsh` opens a shell instead of Claude
+
 ```bash
-docker compose build
+devcb
 ```
 
 ```bash
-docker compose run --rm --service-ports dev
+cd ~/code/some-project && devc
 ```
 
-The container's entrypoint is `.devcontainer/entrypoint.sh`, which starts `claude`; it's read
-from the mounted repo, so changes to it don't need a rebuild. The container exits when Claude
-does. For a shell instead, override it:
+Run from this repo without the shortcut, `docker compose run --rm dev` uses this repo as the
+workspace; set `WORKSPACE_DIR` and `WORKSPACE_NAME` to pick another. This repo is also always
+mounted at `/opt/dev-env` (`$DEV_ENV_HOME` in the container): the entrypoint,
+`.devcontainer/entrypoint.sh`, runs from there and starts `claude`, so changes to it don't need
+a rebuild. The container exits when Claude does.
 
-```bash
-docker compose run --rm --service-ports --entrypoint zsh dev
-```
-
-`be` isn't installed in this flow; run `.devcontainer/post-create.sh` in the container to install
-it (each `run` starts a fresh container). Ports 8765 and 5173 are published on 127.0.0.1.
+`be` isn't installed in this flow; run `/opt/dev-env/.devcontainer/post-create.sh` in the
+container to install it (each `run` starts a fresh container).
