@@ -1,11 +1,30 @@
 import { useCallback, useState } from 'react'
-import { ChevronsLeft, ChevronsRight, Keyboard, Moon, NotebookPen, Settings2, Sun, type LucideIcon } from 'lucide-react'
+import {
+  ChevronsLeft,
+  ChevronsRight,
+  Folder,
+  Keyboard,
+  Moon,
+  NotebookPen,
+  Plus,
+  Settings2,
+  Sun,
+  type LucideIcon,
+} from 'lucide-react'
 import { DynamicIcon, iconNames, type IconName } from 'lucide-react/dynamic'
 import { useTheme } from 'next-themes'
 import { NavLink, Outlet, useLocation } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Kbd } from '@/components/ui/kbd'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -26,7 +45,7 @@ import {
   SidebarTrigger,
   useSidebar,
 } from '@/components/ui/sidebar'
-import { useAction, useMeta, useTable } from '@/hooks/queries'
+import { useAction, useMeta, useNotesFolders, useTable } from '@/hooks/queries'
 import { useKeyboardNav } from '@/hooks/useKeyboardNav'
 import { api, type PrTableId } from '@/lib/api'
 import { countTree, filterTree, prShown, usePrFilters, useTreePicks } from '@/lib/filters'
@@ -91,6 +110,7 @@ export function Layout() {
           <Separator orientation="vertical" className="h-4 md:hidden" />
           <h1 className="text-sm font-medium">{page?.label ?? 'not found'}</h1>
           <div className="ml-auto flex items-center gap-1">
+            <NewSessionMenu />
             <Button variant="ghost" size="sm" onClick={() => notes.mutate([])} className="text-muted-foreground">
               <NotebookPen />
               notes
@@ -216,6 +236,42 @@ function useShownCount(tables: CountId[]) {
 // an unknown name gets file-text
 function SkillIcon({ name }: { name: string }) {
   return <DynamicIcon name={(iconNames as string[]).includes(name) ? (name as IconName) : 'file-text'} />
+}
+
+// a new claude session, in a cmux workspace, in one of notes.dir's folders
+function NewSessionMenu() {
+  const [open, setOpen] = useState(false)
+  const folders = useNotesFolders(open)
+  const run = useAction(api.newSession)
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild disabled={run.isPending}>
+        <Button variant="ghost" size="icon-sm" aria-label="new claude session" className="text-muted-foreground">
+          <Plus />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuLabel>new claude session in</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {folders.isPending ? (
+          <DropdownMenuItem disabled>loading…</DropdownMenuItem>
+        ) : folders.error ? (
+          <DropdownMenuItem disabled className="text-destructive">
+            {folders.error.message}
+          </DropdownMenuItem>
+        ) : !folders.data.folders.length ? (
+          <DropdownMenuItem disabled>no folders</DropdownMenuItem>
+        ) : (
+          folders.data.folders.map((f) => (
+            <DropdownMenuItem key={f} onSelect={() => run.mutate([f])}>
+              <Folder />
+              {f}
+            </DropdownMenuItem>
+          ))
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
 }
 
 function ThemeToggle() {

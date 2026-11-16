@@ -106,9 +106,10 @@ SETTINGS = {
             "pages",
             "BE_PAGES",
             "`be server` pages showing a skill's HTML output: skill, output (a glob for the file it writes), "
-            "icon (a lucide name), prompt (more for the skill), cwd (where claude runs it)",
+            "icon (a lucide name), prompt (more for the skill), cwd (where claude runs it), "
+            "permission_mode (claude's --permission-mode for the run, e.g. auto)",
             kind="tables",
-            fields=("skill", "output", "icon", "prompt", "cwd"),
+            fields=("skill", "output", "icon", "prompt", "cwd", "permission_mode"),
         ),
     )
 }

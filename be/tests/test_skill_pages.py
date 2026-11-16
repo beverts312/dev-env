@@ -49,6 +49,7 @@ def test_pages_fill_defaults_and_skip_incomplete(home, isolated_config):
             "icon": "file-text",
             "prompt": "",
             "cwd": str(home / "pages" / "finops"),
+            "permission_mode": "",
         }
     }
 
@@ -67,6 +68,14 @@ def test_start_runs_from_default_dir(home, monkeypatch):
     ]
     assert kw["cwd"] == home / "pages" / "finops" and kw["cwd"].is_dir()
     assert run.log == home / "pages" / "finops" / "last-run.log"
+    assert run.output == ""
+
+
+def test_start_passes_permission_mode(home, monkeypatch):
+    calls = []
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd, **kw: calls.append(cmd) or FakeProc())
+    skill_pages.start(page(home, permission_mode="auto"), None)
+    assert calls[0][-2:] == ["--permission-mode", "auto"]
 
 
 def test_start_runs_from_configured_cwd(home, monkeypatch):
@@ -120,6 +129,18 @@ def test_status_explains_failure_with_result(tmp_path):
     assert failed["error"] == "claude exited 1\nno BigQuery access"
     # an error result fails the run even when claude exits 0
     assert skill_pages.status(skill_pages.Run(FakeProc(0), 5.0, log))["error"] == "claude exited 0\nno BigQuery access"
+
+
+def test_status_fails_a_run_that_wrote_nothing(tmp_path):
+    log = tmp_path / "log"
+    log.write_text(stream({"type": "result", "result": "Read was denied", "is_error": False}))
+    out = tmp_path / "out.html"
+    out.write_text("old")
+    os.utime(out, (1, 1))
+    stale = skill_pages.status(skill_pages.Run(FakeProc(0), 5.0, log, str(tmp_path / "*.html")))
+    assert stale["error"] == f"claude exited 0 without writing a new {tmp_path / '*.html'}\nRead was denied"
+    os.utime(out, (10, 10))
+    assert skill_pages.status(skill_pages.Run(FakeProc(0), 5.0, log, str(tmp_path / "*.html")))["error"] is None
 
 
 def test_watch_logs_how_the_run_ended(tmp_path, caplog):

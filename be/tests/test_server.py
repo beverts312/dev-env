@@ -43,7 +43,7 @@ def client(state=None, static=None):
 @pytest.fixture
 def serve(monkeypatch, tmp_path):
     fetched = []
-    monkeypatch.setattr(pr, "review_requests", lambda: fetched.append("review") or PRS)
+    monkeypatch.setattr(pr, "review_requests", lambda: fetched.append("review") or list(PRS))
     monkeypatch.setattr(pr, "team_review_requests", lambda: fetched.append("team") or PRS[:2])
     monkeypatch.setattr(pr, "authored_prs", lambda: fetched.append("mine") or [dict(p) for p in PRS[:3]])
     monkeypatch.setattr(jira, "issue_tree", lambda: fetched.append("jira") or [])
@@ -306,6 +306,41 @@ def test_open_notes(serve, tmp_path, monkeypatch):
     assert len(runs) == 1
 
 
+def test_notes_folders(serve, tmp_path):
+    c, _, _, _ = serve
+    tmp_path = tmp_path / "notes"
+    tmp_path.mkdir()
+    for name in ("brain", "ai", ".git"):
+        (tmp_path / name).mkdir()
+    (tmp_path / "readme.md").write_text("")
+    config.set_value("notes.dir", str(tmp_path))
+    assert c.get("/api/notes/folders").json() == {"folders": ["ai", "brain"]}
+    config.set_value("notes.dir", str(tmp_path / "nope"))
+    resp = c.get("/api/notes/folders")
+    assert resp.status_code == 422 and "not found; set notes.dir" in resp.json()["message"]
+
+
+def test_notes_session(serve, tmp_path, monkeypatch):
+    c, _, _, _ = serve
+    opened = []
+    monkeypatch.setattr(ws, "new_session", lambda cwd, model=None, window=None: opened.append(cwd))
+    (tmp_path / "brain").mkdir()
+    (tmp_path / ".git").mkdir()
+    config.set_value("notes.dir", str(tmp_path))
+    assert c.post("/api/notes/folders/brain/claude").json() == {"message": "opened claude in brain"}
+    assert opened == [tmp_path / "brain"]
+    for name in (".git", "nope", ".."):
+        assert c.post(f"/api/notes/folders/{name}/claude").status_code in (400, 404)
+    assert len(opened) == 1
+
+    def fail(cwd, model=None, window=None):
+        raise click.ClickException("cmux not found")
+
+    monkeypatch.setattr(ws, "new_session", fail)
+    resp = c.post("/api/notes/folders/brain/claude")
+    assert resp.status_code == 422 and "cmux not found" in resp.json()["message"]
+
+
 def test_open_configs(serve, tmp_path, monkeypatch):
     c, _, _, _ = serve
     runs = []
@@ -530,12 +565,41 @@ def test_bulk_merge_keeps_going(serve, monkeypatch):
     assert numbers(table(c, "mine")) == [7]
 
 
+def test_bulk_approve(serve, monkeypatch):
+    c, _, _, _ = serve
+    approved = []
+
+    def approve(repo, number):
+        if number == 1234:
+            raise click.ClickException("gh pr review failed: can't approve")
+        approved.append((repo, number))
+
+    monkeypatch.setattr(github, "approve", approve)
+    approve_all = lambda t, *prs: c.post("/api/prs/bulk", json={"action": "approve", "prs": list(prs), "table": t})
+    # an unloaded table has nothing to approve
+    assert approve_all("team", "acme/api#7").json()["results"][0] == {
+        "pr": "acme/api#7", "ok": False, "message": "acme/api#7 is not in your team review requests",
+    }
+    table(c, "team", refresh=True)
+    done = approve_all("team", "acme/api#7", "acme/web-app#1234").json()
+    assert approved == [("acme/api", 7)]
+    assert done["message"] == "approved acme/api#7; acme/web-app#1234: gh pr review failed: can't approve"
+    # the approved PR is dropped, the failed one stays
+    assert numbers(table(c, "team")) == [1234]
+    table(c, "review", refresh=True)
+    assert approve_all("review", "acme/api#9").json()["results"][0]["ok"]
+    assert numbers(table(c, "review")) == [7, 1234, 5]
+
+
 def test_bulk_bad_input(serve):
     c, _, _, _ = serve
     resp = bulk(c, "ready")
     assert resp.status_code == 422 and resp.json()["message"] == "no PRs selected"
-    for action, prs in (("nope", ["acme/api#7"]), ("ready", ["acme/api#x"]), ("ready", ["#7"])):
+    for action, prs in (("nope", ["acme/api#7"]), ("ready", ["acme/api#x"]), ("ready", ["#7"]), ("approve", ["acme/api#7"])):
         assert bulk(c, action, *prs).status_code == 400
+    # your PRs' actions don't run on review requests
+    resp = c.post("/api/prs/bulk", json={"action": "merge", "prs": ["acme/api#7"], "table": "review"})
+    assert resp.status_code == 400
 
 
 def test_requests_and_fetches_are_logged(serve, caplog):

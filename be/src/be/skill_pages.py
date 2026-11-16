@@ -48,6 +48,7 @@ def pages() -> dict[str, dict]:
             "icon": page.get("icon") or DEFAULT_ICON,
             "prompt": page.get("prompt", ""),
             "cwd": str(Path(page["cwd"]).expanduser()) if page.get("cwd") else str(page_dir(name)),
+            "permission_mode": page.get("permission_mode", ""),
         }
     return out
 
@@ -63,6 +64,8 @@ class Run:
     proc: subprocess.Popen
     started: float
     log: Path
+    # the page's output glob, so a run that writes nothing new counts as failed
+    output: str | None = None
 
 
 def start(page: dict, model: str | None) -> Run:
@@ -79,6 +82,8 @@ def start(page: dict, model: str | None) -> Run:
     cmd = ["claude", "-p", prompt, "--output-format", "stream-json", "--verbose"]
     if model:
         cmd += ["--model", model]
+    if page.get("permission_mode"):
+        cmd += ["--permission-mode", page["permission_mode"]]
     with logfile.open("wb") as out:
         try:
             proc = subprocess.Popen(
@@ -90,7 +95,7 @@ def start(page: dict, model: str | None) -> Run:
         "refreshing page %s: started /%s (pid %s, model %s) in %s, logging to %s",
         page["name"], page["skill"], proc.pid, model or "default", cwd, logfile,
     )
-    run = Run(proc, time.time(), logfile)
+    run = Run(proc, time.time(), logfile, page["output"])
     threading.Thread(target=watch, args=(page["name"], run), daemon=True).start()
     return run
 
@@ -130,7 +135,8 @@ def read_log(path: Path) -> dict:
 
 def status(run: Run | None) -> dict:
     """Whether the page's last run is going, and when it ended badly, why: its result, or else
-    the end of its log."""
+    the end of its log. A run that exits cleanly without writing a new output file ended badly too,
+    as one whose tools were all denied does."""
     out = {"running": False, "started_at": None, "exit_code": None, "error": None}
     if run is None:
         return out
@@ -139,7 +145,15 @@ def status(run: Run | None) -> dict:
     if code is None:
         return out
     found = read_log(run.log)
+    detail = [found["result"]] if found["result"] else found["tail"]
     if code or found["is_error"]:
-        detail = [found["result"]] if found["result"] else found["tail"]
         out["error"] = "\n".join([f"claude exited {code}", *detail])
+    elif run.output and not wrote(run):
+        out["error"] = "\n".join([f"claude exited {code} without writing a new {run.output}", *detail])
     return out
+
+
+def wrote(run: Run) -> bool:
+    """Whether the run wrote its output: the newest match changed since it started."""
+    file = latest(run.output or "")
+    return file is not None and file.stat().st_mtime >= run.started

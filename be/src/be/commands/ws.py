@@ -332,6 +332,27 @@ def claude_pane(root: Path, cwd: Path, extra: list[str], model: str | None, wind
     cmux.new_pane(binary, *found, f"cd {shlex.quote(str(cwd))} && {command}")
 
 
+def new_session(cwd: Path, model: str | None = None, window: str | None = None) -> None:
+    """Open a cmux workspace, named after cwd, running claude in cwd."""
+    if not model:
+        model, _ = config.resolve("claude.model")
+    binary = cmux.start()
+    cmux.new_workspace(
+        binary,
+        [
+            "--name",
+            cwd.name,
+            "--cwd",
+            str(cwd),
+            "--focus",
+            "true",
+            "--command",
+            claude_command([], model or ""),
+            *window_args(target_window(binary, window)),
+        ],
+    )
+
+
 def cloud_issue(text: str, model: str | None = None, window: str | None = None) -> None:
     """Open a cmux workspace running claude's /cloud-issue on text, in ws.dir or home."""
     if not model:

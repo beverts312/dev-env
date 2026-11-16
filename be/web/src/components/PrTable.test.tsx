@@ -81,8 +81,27 @@ describe('PrTable', () => {
     expect(calls.find((c) => c.method === 'POST')).toEqual({
       method: 'POST',
       path: '/prs/bulk',
-      body: { action: 'automerge', prs: ['acme/api#8'] },
+      body: { action: 'automerge', prs: ['acme/api#8'], table: 'mine' },
     })
+  })
+
+  it('approves the checked review requests, after confirming', async () => {
+    const calls = mockApi({
+      'GET /tables/team': { ...table([pr(7, { actions: undefined }), pr(8, { actions: undefined })]), table: 'team' },
+      'POST /prs/bulk': { message: 'ok', results: [{ pr: 'acme/api#7', ok: true, message: 'approved acme/api#7' }] },
+    })
+    renderApp(<PrTable table="team" title="team review requests" />)
+    await screen.findByText('PR 7')
+    const bulk = () => screen.getByTestId('picked-count').parentElement!
+    // review requests have only approve, and none of your PRs' actions
+    expect(within(bulk()).getByRole('button', { name: 'approve (0)' })).toBeDisabled()
+    expect(within(bulk()).queryByRole('button', { name: /auto-merge/ })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('checkbox', { name: 'select acme/api#7' }))
+    await userEvent.click(within(bulk()).getByRole('button', { name: 'approve (1)' }))
+    expect(calls.some((c) => c.method === 'POST')).toBe(false)
+    await userEvent.click(await screen.findByRole('button', { name: 'approve' }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true))
+    expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ action: 'approve', prs: ['acme/api#7'], table: 'team' })
   })
 
   it('offers to load a table that is not loaded yet', async () => {

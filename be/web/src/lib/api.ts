@@ -5,6 +5,9 @@ export type MineAction = 'ready' | 'automerge' | 'merge'
 
 export const ACTION_LABELS: Record<MineAction, string> = { ready: 'ready', automerge: 'auto-merge', merge: 'merge' }
 
+// what a PR table's bulk bar can do: your PRs' actions, or approving review requests
+export type BulkAction = MineAction | 'approve'
+
 export type Pr = {
   number: number
   repo: string
@@ -295,11 +298,14 @@ export const api = {
     request<Done>('POST', '/prs/review', { repo, number, agent }),
   mineAction: (action: MineAction, repo: string, number: number) =>
     request<Done>('POST', `/prs/${action}`, { repo, number }),
-  bulk: (action: MineAction, prs: string[]) => request<BulkDone>('POST', '/prs/bulk', { action, prs }),
+  bulk: (table: PrTableId, action: BulkAction, prs: string[]) =>
+    request<BulkDone>('POST', '/prs/bulk', { action, prs, table }),
   starred: (prs: string[]) => request<StarredData>('POST', '/prs/starred', { prs }),
   openWorkspace: (name: string) => request<Done>('POST', `/workspaces/${segment(name)}/open`),
   openNotes: () => request<Done>('POST', '/notes/vscode'),
   openConfigs: () => request<Done>('POST', '/configs/vscode'),
+  notesFolders: () => request<{ folders: string[] }>('GET', '/notes/folders'),
+  newSession: (folder: string) => request<Done>('POST', `/notes/folders/${segment(folder)}/claude`),
   openVscode: (name: string) => request<Done>('POST', `/workspaces/${segment(name)}/vscode`),
   createWorkspace: (fields: {
     name: string

@@ -97,6 +97,11 @@ export function useTodos(done = false) {
   return useQuery({ queryKey: [...todosKey, done], queryFn: () => api.todos(done) })
 }
 
+// The folders in notes.dir, read when the top bar's new session menu opens
+export function useNotesFolders(enabled: boolean) {
+  return useQuery({ queryKey: ['notes-folders'], queryFn: api.notesFolders, enabled })
+}
+
 export const sessionsKey = (workspace: string) => ['sessions', workspace] as const
 
 // The claude sessions run in a workspace, read afresh from their transcripts

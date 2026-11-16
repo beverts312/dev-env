@@ -271,6 +271,11 @@ def mark_ready(slug: str, number: int) -> None:
     gh("pr", "ready", str(number), "--repo", slug)
 
 
+def approve(slug: str, number: int) -> None:
+    """Approve someone else's PR."""
+    gh("pr", "review", str(number), "--repo", slug, "--approve")
+
+
 # merge methods in order of preference, keyed by the repo setting that allows each
 MERGE_METHODS = (
     ("squashMergeAllowed", "--squash"),

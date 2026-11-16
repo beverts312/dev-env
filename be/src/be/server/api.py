@@ -87,6 +87,22 @@ class State:
             mine.remove(found[0])
         return True, message
 
+    def approve(self, table: str, repo: str, number: int) -> tuple[bool, str]:
+        """Approve a PR in the review or team table, which must be loaded."""
+        rows = self.loaded.get(table)
+        found = [p for p in rows if p["repo"] == repo and p["number"] == number] if isinstance(rows, list) else []
+        if not found:
+            return False, f"{repo}#{number} is not in your {pr.TITLES[table]}"
+        try:
+            github.approve(repo, number)
+        except click.ClickException as e:
+            log.warning("approving %s#%s failed: %s", repo, number, e.format_message())
+            return False, f"{repo}#{number}: {e.format_message()}"
+        log.info("approved %s#%s", repo, number)
+        # it no longer waits on your review, so it's dropped rather than refetching the table
+        rows.remove(found[0])
+        return True, f"approved {repo}#{number}"
+
 
 def state(request: Request) -> State:
     return request.app.state.be
@@ -187,13 +203,18 @@ def review(body: PrRef, request: Request) -> dict:
 class Bulk(BaseModel):
     action: str
     prs: list[str]
+    table: str = "mine"
+
+
+# the actions each PR table can run in bulk: your PRs' buttons, and approving review requests
+BULK_ACTIONS = {"mine": tuple(MINE_BUTTONS), "review": ("approve",), "team": ("approve",)}
 
 
 @router.post("/prs/bulk")
 def bulk(body: Bulk, request: Request) -> dict:
-    """Run the action on each of the "repo#number" PRs, carrying on past failures."""
+    """Run the action on each of the "repo#number" PRs in the table, carrying on past failures."""
     picked = [value.rpartition("#") for value in body.prs]
-    if body.action not in MINE_BUTTONS or any(not n.isdigit() or not r for r, _, n in picked):
+    if body.action not in BULK_ACTIONS.get(body.table, ()) or any(not n.isdigit() or not r for r, _, n in picked):
         raise HTTPException(400, "bad bulk action")
     if not picked:
         raise ActionFailed("no PRs selected")
@@ -201,7 +222,10 @@ def bulk(body: Bulk, request: Request) -> dict:
     with s.lock:
         results = []
         for r, _, n in picked:
-            ok, message = s.run_action(body.action, r, int(n), bulk=True)
+            if body.table == "mine":
+                ok, message = s.run_action(body.action, r, int(n), bulk=True)
+            else:
+                ok, message = s.approve(body.table, r, int(n))
             results.append({"pr": f"{r}#{n}", "ok": ok, "message": message})
     return {"message": "; ".join(x["message"] for x in results), "results": results}
 
@@ -288,6 +312,36 @@ def open_notes() -> dict:
     """Open notes.dir in VS Code."""
     notes = notes_dir()
     return open_in_vscode("notes", notes, notes.is_dir(), "notes.dir")
+
+
+@router.get("/notes/folders")
+def notes_folders() -> dict:
+    """The folders directly in notes.dir, hidden ones left out."""
+    notes = notes_dir()
+    if not notes.is_dir():
+        raise ActionFailed(f"notes: {notes} not found; set notes.dir")
+    return {"folders": sorted(e.name for e in notes.iterdir() if e.is_dir() and not e.name.startswith("."))}
+
+
+@router.post("/notes/folders/{name}/claude")
+def notes_session(name: str, request: Request) -> dict:
+    """Open a cmux workspace running a new claude session in a folder of notes.dir."""
+    valid_name(name)
+    path = notes_dir() / name
+    if name.startswith(".") or not path.is_dir():
+        raise HTTPException(400, f"{name} is not a notes folder")
+    with state(request).lock:
+        try:
+            window, _ = config.resolve("cmux.window")
+            ws.new_session(path, window=window)
+        except click.ClickException as e:
+            log.warning("opening claude in %s failed: %s", name, e.format_message())
+            raise ActionFailed(f"{name}: {e.format_message()}") from e
+        except click.exceptions.Exit as e:
+            log.warning("opening claude in %s failed: cmux could not open a workspace", name)
+            raise ActionFailed(f"{name}: cmux could not open a workspace") from e
+    log.info("opened claude in %s", name)
+    return {"message": f"opened claude in {name}"}
 
 
 @router.post("/configs/vscode")

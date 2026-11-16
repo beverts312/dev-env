@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { tableKey, useAction, useAgent, useStarred, useStarredTable, useTable } from '@/hooks/queries'
-import { ACTION_LABELS, api, prName, type MineAction, type Pr, type PrTableId, type PrViewId } from '@/lib/api'
+import { ACTION_LABELS, api, prName, type BulkAction, type MineAction, type Pr, type PrTableId, type PrViewId } from '@/lib/api'
 import { ALL, CHECK_STYLES, CHECKS, DRAFT, filtersOn, prShown, toggleAll, usePrFilters } from '@/lib/filters'
 import { cn } from '@/lib/utils'
 
@@ -29,8 +29,9 @@ type PrSource = {
   refreshing: boolean
 }
 
-// A `pr ls` table: review requests, team review requests, or your PRs, which can also be marked
-// ready, set to auto-merge, or merged, one at a time or checked and done in bulk
+// A `pr ls` table: review requests, team review requests, or your PRs. Your PRs can also be marked
+// ready, set to auto-merge, or merged, one at a time or checked and done in bulk; review requests
+// can be checked and approved in bulk
 export function PrTable({ table, title }: { table: PrTableId; title: string }) {
   const data = useTable(table)
   const rows = data.data?.rows ?? null
@@ -55,6 +56,8 @@ export function StarredTable({ title }: { title: string }) {
 
 function PrTableView({ table, title, data }: { table: PrViewId; title: string; data: PrSource }) {
   const mine = table === 'mine'
+  // the starred table has no bulk bar, as its PRs aren't the server's to act on
+  const bulk = table !== 'starred'
   const qc = useQueryClient()
   const [filters, setFilters] = usePrFilters(table)
   const [agent] = useAgent()
@@ -81,11 +84,12 @@ function PrTableView({ table, title, data }: { table: PrViewId; title: string; d
       return next
     })
 
-  const runBulk = async (action: MineAction) => {
+  const runBulk = async (action: BulkAction) => {
+    if (!bulk) return
     try {
       // only the PRs the button counted
-      const prs = pickedShown.filter((p) => p.actions?.includes(action)).map(prName)
-      const done = await api.bulk(action, prs)
+      const prs = pickedShown.filter((p) => !mine || p.actions?.includes(action as MineAction)).map(prName)
+      const done = await api.bulk(table, action, prs)
       const failed = done.results.filter((r) => !r.ok)
       const lines = done.results.map((r) => r.message)
       if (failed.length) toast.warning(`${failed.length} of ${lines.length} didn't go`, { description: lines.join('\n') })
@@ -94,7 +98,7 @@ function PrTableView({ table, title, data }: { table: PrViewId; title: string; d
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
-      await qc.invalidateQueries({ queryKey: tableKey('mine') })
+      await qc.invalidateQueries({ queryKey: tableKey(table) })
     }
   }
 
@@ -149,8 +153,8 @@ function PrTableView({ table, title, data }: { table: PrViewId; title: string; d
       refreshing={data.refreshing}
       toolbar={toolbar}
     >
-      {mine && rows && rows.length > 0 && (
-        <BulkBar picked={pickedShown} onRun={runBulk} />
+      {bulk && rows && rows.length > 0 && (
+        <BulkBar picked={pickedShown} mine={mine} onRun={runBulk} />
       )}
       {!rows || !rows.length ? (
         <SectionState
@@ -164,7 +168,7 @@ function PrTableView({ table, title, data }: { table: PrViewId; title: string; d
         <Table>
           <TableHeader>
             <TableRow>
-              {mine && (
+              {bulk && (
                 <TableHead className="w-8">
                   <Checkbox
                     aria-label="select all shown"
@@ -187,7 +191,7 @@ function PrTableView({ table, title, data }: { table: PrViewId; title: string; d
           <TableBody>
             {shown.map((p) => (
               <TableRow key={prName(p)} data-nav-row data-pr={prName(p)}>
-                {mine && (
+                {bulk && (
                   <TableCell>
                     <Checkbox
                       data-nav-pick

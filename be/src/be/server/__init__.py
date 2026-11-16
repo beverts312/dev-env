@@ -55,7 +55,8 @@ def server(
     A sidebar switches between my work (the Jira tree), my PRs, reviews, and workspaces.
     Each PR can be reviewed (as `pr review`) or opened on GitHub, and each of
     your PRs marked ready (drafts), set to auto-merge, or merged (approved),
-    one at a time or checked and done in bulk; each issue
+    one at a time or checked and done in bulk; review requests can be checked and
+    approved in bulk; each issue
     opened in Jira, or its workspace opened or created. The Jira tree loads the first time it's shown,
     and the workspaces in ws.dir every time; the PR tables load when you refresh them. The config page
     edits the config file, one setting at a time; pr.dir, server.log_level, pr.agent,
