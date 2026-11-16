@@ -54,6 +54,10 @@ checkPidTraffic() {
 alias flushdns='be dns flush-local'
 
 alias ag='agy-ide'
+
+# dev container (docker-compose.yml in this repo; works from any directory)
+alias devc='docker compose -f "$DEV_ENV_HOME/docker-compose.yml" run --rm --service-ports dev'   # Start Claude in the dev container
+alias devcb='docker compose -f "$DEV_ENV_HOME/docker-compose.yml" build'                         # Build the dev container image
 ezgource() {
   name=$(printf '%s\n' "${PWD##*/}")-$(date +%s).mp4
   res=1920x1080
