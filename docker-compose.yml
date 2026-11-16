@@ -1,0 +1,33 @@
+# The dev container without VS Code: `docker compose up -d --build`, then
+# `docker compose exec dev zsh`. Settings come from .env (copy .env.example).
+services:
+  dev:
+    build:
+      context: .devcontainer
+      args:
+        # match the host user so files in mounted dirs (repo, ~/.ssh, ~/.claude) are owned correctly
+        USER_UID: ${USER_UID:-1000}
+        USER_GID: ${USER_GID:-1000}
+    image: dev-env:latest
+    hostname: dev-env
+    env_file:
+      - path: .env
+        required: false
+    command: sleep infinity
+    init: true
+    working_dir: /workspaces/dev-env
+    ports:
+      - "127.0.0.1:8765:8765" # be server (run with --host 0.0.0.0)
+      - "127.0.0.1:5173:5173" # vite dev server (run with --host)
+    volumes:
+      - .:/workspaces/dev-env
+      - node-modules:/workspaces/dev-env/be/web/node_modules
+      - ${CLAUDE_DIR:-~/.claude}:/home/dev/.claude
+      - ${SSH_DIR:-~/.ssh}:/home/dev/.ssh:ro
+      - ${KUBE_DIR:-~/.kube}:/home/dev/.kube
+      - ${AWS_DIR:-~/.aws}:/home/dev/.aws
+      - ${GH_CONFIG_DIR:-~/.config/gh}:/home/dev/.config/gh
+      - ${GCLOUD_DIR:-~/.config/gcloud}:/home/dev/.config/gcloud
+
+volumes:
+  node-modules:

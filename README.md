@@ -25,3 +25,30 @@ container (they're created on the host if missing). On macOS `gh` keeps its toke
 keychain, so export `GH_TOKEN` on the host instead; `ANTHROPIC_API_KEY` is passed through too.
 `configure.py` isn't run in the container; run it by hand if you want `.benvrc` and the aliases.
 Versions are `ARG`s at the top of `.devcontainer/Dockerfile`.
+
+### Without VS Code: docker compose
+
+`docker-compose.yml` runs the same image with `docker compose`. Copy `.env.example` to `.env`
+(gitignored) and set your `USER_UID`/`USER_GID` (`id -u`, `id -g`) and `CLAUDE_DIR`, the Claude
+config dir mounted at `~/.claude` (defaults to your host `~/.claude`). `~/.ssh` is mounted
+read-only, plus the same kube, aws, gh, and gcloud dirs; each is a variable in `.env`. Every
+variable in `.env` is also set in the container, so `GH_TOKEN` and `ANTHROPIC_API_KEY` go there.
+
+```bash
+cp .env.example .env
+```
+
+```bash
+docker compose up -d --build
+```
+
+```bash
+docker compose exec dev .devcontainer/post-create.sh
+```
+
+```bash
+docker compose exec dev zsh
+```
+
+Run `post-create.sh` again whenever the container is recreated, since `be` and the Python venv
+live in the container's home. Ports 8765 and 5173 are published on 127.0.0.1.
