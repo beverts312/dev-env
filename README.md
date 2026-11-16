@@ -39,16 +39,20 @@ cp .env.example .env
 ```
 
 ```bash
-docker compose up -d --build
+docker compose build
 ```
 
 ```bash
-docker compose exec dev .devcontainer/post-create.sh
+docker compose run --rm --service-ports dev
 ```
+
+The container's entrypoint is `.devcontainer/entrypoint.sh`, which starts `claude`; it's read
+from the mounted repo, so changes to it don't need a rebuild. The container exits when Claude
+does. For a shell instead, override it:
 
 ```bash
-docker compose exec dev zsh
+docker compose run --rm --service-ports --entrypoint zsh dev
 ```
 
-Run `post-create.sh` again whenever the container is recreated, since `be` and the Python venv
-live in the container's home. Ports 8765 and 5173 are published on 127.0.0.1.
+`be` isn't installed in this flow; run `.devcontainer/post-create.sh` in the container to install
+it (each `run` starts a fresh container). Ports 8765 and 5173 are published on 127.0.0.1.

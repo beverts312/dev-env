@@ -1,5 +1,5 @@
-# The dev container without VS Code: `docker compose up -d --build`, then
-# `docker compose exec dev zsh`. Settings come from .env (copy .env.example).
+# The dev container without VS Code: `docker compose run --rm --service-ports dev` starts
+# .devcontainer/entrypoint.sh (Claude Code). Settings come from .env (copy .env.example).
 services:
   dev:
     build:
@@ -13,7 +13,10 @@ services:
     env_file:
       - path: .env
         required: false
-    command: sleep infinity
+    # read from the mounted repo, so edits take effect without a rebuild
+    entrypoint: /workspaces/dev-env/.devcontainer/entrypoint.sh
+    stdin_open: true
+    tty: true
     init: true
     working_dir: /workspaces/dev-env
     ports:
